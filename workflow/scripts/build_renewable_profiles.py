@@ -17,6 +17,8 @@ from _helpers import configure_logging, get_snapshots
 from dask.distributed import Client
 from pypsa.geo import haversine
 from shapely.geometry import LineString
+from typing import List, Tuple, Dict, Union, Set
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,11 @@ def load_WUS_data(planning_horizon: int) -> xr.Dataset:
     #Loads WUS data for given planning horizon#
     base_path = snakemake.config['cf_path']
     logger.info(f"Loading WUS data for planning horizon {planning_horizon} from {base_path}...")
+<<<<<<< HEAD
     file_path = base_path + f"/Solar_Wind_CFs_{planning_horizon}.nc" #Path(base_path) / 
+=======
+    file_path = Path(base_path) / f"Solar_Wind_CFs_{planning_horizon}.nc"
+>>>>>>> wus-dev
     
     if not file_path.exists():
         raise FileNotFoundError(f"WUS data file not found at: {file_path}")
@@ -64,7 +70,11 @@ def create_blank_profile(pypsa_profile: xr.Dataset) -> xr.DataArray:
         name='empty_profile'
     )
 
+<<<<<<< HEAD
 def find_closest(lat: float, long: float, wus_latitude: np.ndarray, wus_longitude: np.ndarray): #-> List[float]
+=======
+def find_closest(lat: float, long: float, wus_latitude: np.ndarray, wus_longitude: np.ndarray) -> List[float]:
+>>>>>>> wus-dev
     #For given pypsa bus coordinate, find the closest latitude and longitude point in the WUS dataset.
     lat_idx = np.abs(wus_latitude - lat).argmin()
     long_idx = np.abs(wus_longitude - long).argmin()
@@ -195,7 +205,7 @@ if __name__ == "__main__":
     else:
         client = None
 
-    sns = get_snapshots(snakemake.params.snapshots)
+    sns = get_snapshots(snakemake.params.snapshots[snakemake.wildcards.renewable_weather_years])
     logger.info(f'using cutout "{snakemake.input.cutout}"')
     cutout = atlite.Cutout(snakemake.input.cutout[0]).sel(
         time=sns,
@@ -391,6 +401,23 @@ if __name__ == "__main__":
         min_p_max_pu = params["clip_p_max_pu"]
         ds["profile"] = ds["profile"].where(ds["profile"] >= min_p_max_pu, 0)
 
-    ds.to_netcdf(snakemake.output.profile)
+    # if cf_source is WUS, substitute in WUS capacity factors
+    if snakemake.config["cf_source"] == "WUS":
+        logger.info("CF source is set to WUS, beginning capacity factor substitution...")
+
+        # get index of renewable weather year, then get that planning horizon
+        index = snakemake.config['renewable_weather_years'].index(int(snakemake.wildcards.renewable_weather_years))
+        wus_year = snakemake.config['scenario']['planning_horizons'][index]
+
+        wus_data = load_WUS_data(wus_year)
+        wus_profile = generate_wus_profile(ds,wus_data,buses,bus_coords,snakemake.wildcards.technology,sns)
+
+        logger.info("Capacity factor substitution complete.")
+        wus_profile.to_netcdf(snakemake.output.profile)
+
+    # otherwise, leave renewable profile untouched
+    else:
+        logger.info("CF source is set to ERA5, no changes have been made to capacity factors.")
+        ds.to_netcdf(snakemake.output.profile)
     if client is not None:
         client.shutdown()
