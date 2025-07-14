@@ -219,6 +219,47 @@ class ReadStrategy(ABC):
             return df
 
 
+class ReadMartha(ReadStrategy):
+    # reads data from Martha's demand data generated using the WUS data [AFTER CLEANING]
+
+    """
+    csv format for each gcm:
+        |                     |        |              |
+        | snapshot            | ba     | Demand (MWh) | 
+        |---------------------|--------|--------------|
+        | 2030-01-01 00:00:00 | BPAT   | ####         | 
+        | 2030-01-01 01:00:00 | BPAT   | ####         | 
+    """
+
+    # most is a copy from eia since it seems that's also at the ba level?
+
+    def __init__(self, filepath: str | None = None) -> None:
+        super().__init__(filepath)
+        self._zone = "ba"
+
+    @property
+    def zone(self):  # noqa: D102
+        return self._zone
+
+    def _read_data(self) -> pd.DataFrame:
+        """Reads raw data."""
+        if not self.filepath:
+            logger.error("Must provide filepath for Martha Demand data")
+            sys.exit()
+
+        logger.info("Building Load Data using Martha's WUS demand")
+        return pd.read_csv(self.filepath, engine="pyarrow", index_col="time")
+
+    def _format_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Formats raw data."""
+        df = data.copy().fillna(0)
+        df = self._format_snapshot_index(df)
+        df["fuel"] = "electricity"
+        df["sector"] = "all"
+        df["subsector"] = "all"
+        df = df.set_index([df.index, "sector", "subsector", "fuel"])
+        return df
+
 class ReadEia(ReadStrategy):
     """Reads data from GridEmissions."""
 
@@ -2361,6 +2402,10 @@ if __name__ == "__main__":
         sns = n.snapshots.get_level_values(1).map(
             lambda x: x.replace(year=profile_year),
         )
+
+    elif demand_profile == "martha":
+        reader = ReadMartha(demand_files)
+        sns = n.snapshots.get_level_values(1) # not sure if this is right? but should be since reading in the demand should have the right years
 
     elif demand_profile == "ferc":
         assert profile_year in range(2018, 2024)
