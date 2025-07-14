@@ -49,11 +49,7 @@ def load_WUS_data(planning_horizon: int) -> xr.Dataset:
     #Loads WUS data for given planning horizon#
     base_path = snakemake.config['cf_path']
     logger.info(f"Loading WUS data for planning horizon {planning_horizon} from {base_path}...")
-<<<<<<< HEAD
-    file_path = base_path + f"/Solar_Wind_CFs_{planning_horizon}.nc" #Path(base_path) / 
-=======
     file_path = Path(base_path) / f"Solar_Wind_CFs_{planning_horizon}.nc"
->>>>>>> wus-dev
     
     if not file_path.exists():
         raise FileNotFoundError(f"WUS data file not found at: {file_path}")
@@ -70,11 +66,7 @@ def create_blank_profile(pypsa_profile: xr.Dataset) -> xr.DataArray:
         name='empty_profile'
     )
 
-<<<<<<< HEAD
-def find_closest(lat: float, long: float, wus_latitude: np.ndarray, wus_longitude: np.ndarray): #-> List[float]
-=======
 def find_closest(lat: float, long: float, wus_latitude: np.ndarray, wus_longitude: np.ndarray) -> List[float]:
->>>>>>> wus-dev
     #For given pypsa bus coordinate, find the closest latitude and longitude point in the WUS dataset.
     lat_idx = np.abs(wus_latitude - lat).argmin()
     long_idx = np.abs(wus_longitude - long).argmin()
