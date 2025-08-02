@@ -86,12 +86,20 @@ def add_emission_prices(n, emission_prices={"co2": 0.0}, exclude_co2=False):
     su_ep = n.storage_units.carrier.map(ep) / n.storage_units.efficiency_dispatch
     n.storage_units["marginal_cost"] += su_ep
 
+def prepare_dlr():
+    dlr = pd.read_csv(snakemake.input.dlr,index_col=[0],header=0)
+    dlr.index = pd.to_datetime(dlr.index)
+    datetime_snapshots = n.snapshots.get_level_values(1)
+    filter_dlr = dlr.loc[dlr.index.isin(datetime_snapshots)]
+    filter_dlr.index = pd.MultiIndex.from_tuples([
+        (dt.year, dt) for dt in filter_dlr.index
+    ], names=n.snapshots.names)
+    n.lines_t['dlr'] = filter_dlr
 
 def set_line_s_max_pu(n, transport_model, s_max_pu=0.7):
     if not transport_model:
         logger.info(f"N-1 security margin of lines set to {s_max_pu}")
-        n.lines["s_max_pu"] = s_max_pu
-
+        n.lines_t["s_max_pu"] = s_max_pu*n.lines_t['dlr']
 
 def set_transmission_limit(n, ll_type, factor):
     """
@@ -180,7 +188,10 @@ def average_every_nhours(n, offset):
     for c in n.iterate_components():
         pnl = getattr(m, c.list_name + "_t")
         for k, df in c.pnl.items():
-            if not df.empty:
+            if k == 'dlr' or k == 's_max_pu':
+                logger.info(f'Resampling {k} at min instead of mean')
+                pnl[k] = resample_multi_index(df, offset, "min")
+            elif not df.empty:
                 pnl[k] = resample_multi_index(df, offset, "mean")
     return m
 
@@ -313,6 +324,7 @@ if __name__ == "__main__":
     )
     n.investment_period_weightings["objective"] = objective_w
 
+    prepare_dlr()
     set_line_s_max_pu(n, transport_model, params.lines["s_max_pu"])
 
     # temporal averaging

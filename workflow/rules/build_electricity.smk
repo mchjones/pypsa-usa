@@ -235,6 +235,8 @@ def demand_raw_data(wildcards):
     # get required input data based on profile
     if profile == "eia":
         return DATA + "GridEmissions/EIA_DMD_2018_2024.csv"
+    elif profile == "wus":
+        return DATA + "wus/tai_clean_combined_formatted_big-boi_w-filler_SCALED.csv"
     elif profile == "efs":
         efs_case = config["electricity"]["demand"]["scenario"]["efs_case"].capitalize()
         efs_speed = config["electricity"]["demand"]["scenario"][
@@ -305,6 +307,8 @@ def demand_scaling_data(wildcards):
     elif profile == "eia":
         return []
     elif profile == "ferc":
+        return []
+    elif profile == "wus":
         return []
     else:
         return ""
@@ -782,6 +786,7 @@ rule prepare_network:
             else RESOURCES
             + f"costs/costs_{config['scenario']['planning_horizons'][0]}.csv"
         ),
+        dlr=DATA + "wus/no_dlr_tamu_big-boi.csv",
     output:
         RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}.nc",
     log:

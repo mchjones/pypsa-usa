@@ -224,11 +224,11 @@ class ReadMartha(ReadStrategy):
 
     """
     csv format for each gcm:
-        |                     |        |              |
-        | snapshot            | ba     | Demand (MWh) | 
-        |---------------------|--------|--------------|
-        | 2030-01-01 00:00:00 | BPAT   | ####         | 
-        | 2030-01-01 01:00:00 | BPAT   | ####         | 
+        |                     |              |              |
+        | snapshot            | ba           | ba           | 
+        |---------------------|--------------|--------------|
+        | 2030-01-01 00:00:00 | demand (MWh) | ####         | 
+        | 2030-01-01 01:00:00 | ####         | ####         | 
     """
 
     # most is a copy from eia since it seems that's also at the ba level?
@@ -253,11 +253,32 @@ class ReadMartha(ReadStrategy):
     def _format_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Formats raw data."""
         df = data.copy().fillna(0)
+        df = self._correct_balancing_areas(df)
         df = self._format_snapshot_index(df)
         df["fuel"] = "electricity"
         df["sector"] = "all"
         df["subsector"] = "all"
         df = df.set_index([df.index, "sector", "subsector", "fuel"])
+        return df
+    
+    @staticmethod
+    def _correct_balancing_areas(df: pd.DataFrame) -> pd.DataFrame:
+        """Combine EIA Demand Data to Match GIS Shapes."""
+        df["Arizona"] = df.pop("SRP") + df.pop("AZPS") + df.pop("TEPC")
+        df["Carolina"] = df.pop("CPLE") + df.pop("CPLW") + df.pop("DUK") + df.pop("SC") + df.pop("SCEG") + df.pop("YAD")
+        df["Florida"] = (
+            df.pop("FPC")
+            + df.pop("FPL")
+            + df.pop("GVL")
+            + df.pop("JEA")
+            + df.pop("NSB")
+            + df.pop("SEC")
+            + df.pop("TAL")
+            + df.pop("TEC")
+            + df.pop("HST")
+            + df.pop("FMPP")
+        )
+        df["SPP"] = df.pop("SWPP")
         return df
 
 class ReadEia(ReadStrategy):
@@ -1908,7 +1929,7 @@ class DemandFormatter:
             assert isinstance(self.scaler, DemandScaler)
 
         demand_periods = df.index.year.unique().to_list()
-        if demand_periods == self.investment_periods:
+        if demand_periods == self.investment_periods: # and demand_params["profile"] != "wus":
             logger.info("No demand formatting required")
             return df
 
@@ -1917,7 +1938,7 @@ class DemandFormatter:
         demand_per_period = []
         for investment_year in self.investment_periods:
             formatted_demand = df[df.index.year == investment_year]
-            if not formatted_demand.empty:
+            if not formatted_demand.empty: # and demand_params["profile"] != "wus":
                 demand_per_period.append(formatted_demand)
             else:
                 nearest_year = max([x for x in demand_periods if x <= investment_year])
@@ -1998,6 +2019,10 @@ class DemandScaler(ABC):
         """Scales data."""
         growth = self.get_growth(start_year, end_year, sector)
         new = df.mul(growth)
+        #logger.info(f"old: {df}")
+        #logger.info(f"new: {new}")
+        #logger.info(growth)
+        #logger.info('Scaling complete')
         return self.reindex(new, end_year)
 
     @staticmethod
@@ -2257,6 +2282,17 @@ class EfsElectricityScalar(DemandScaler):
         df["units"] = "MWh"
         return df
 
+class WusElectricityScalar(DemandScaler):
+    def __init__(self, filepath: str):
+        self.region = "western_interconnect"
+        super().__init__()
+    
+    def interpolate(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Function interpolates between provided demand data years."""
+        wus_years = df.index
+        new_years = range(min(wus_years), max(wus_years) + 1)
+        df = df.reindex(new_years)
+        return df.interpolate()
 
 ###
 # helpers
@@ -2276,6 +2312,8 @@ def get_demand_params(
             if demand_profile == "efs":
                 scaling_method = "efs"
             elif demand_profile == "eia":
+                scaling_method = "aeo_electricity"
+            elif demand_profile == "wus":
                 scaling_method = "aeo_electricity"
             elif demand_profile == "ferc":
                 scaling_method = "aeo_electricity"
@@ -2403,7 +2441,7 @@ if __name__ == "__main__":
             lambda x: x.replace(year=profile_year),
         )
 
-    elif demand_profile == "martha":
+    elif demand_profile == "wus":
         reader = ReadMartha(demand_files)
         sns = n.snapshots.get_level_values(1) # not sure if this is right? but should be since reading in the demand should have the right years
 
