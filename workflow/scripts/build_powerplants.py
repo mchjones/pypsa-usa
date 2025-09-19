@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 def initialize_duckdb():
     duckdb.connect(database=":memory:", read_only=False)
     duckdb.query("INSTALL httpfs;")
+    duckdb.query("LOAD httpfs;")
 
 
 def load_eia_operable_data(parquet_path: str):

@@ -189,10 +189,10 @@ rule build_renewable_profiles:
     threads: ATLITE_NPROCESSES
     retries: 1
     resources:
-        mem_mb=lambda wildcards, input, attempt: (
-            ATLITE_NPROCESSES * input.size // 3500000
-        )
-        * 1.5,
+        mem_mb=50000#lambda wildcards, input, attempt: (
+        #    ATLITE_NPROCESSES * input.size // 3500000
+        #)
+        #* 1.5,
     wildcard_constraints:
         technology="(?!hydro|EGS).*",  # Any technology other than hydro
     script:
@@ -236,7 +236,7 @@ def demand_raw_data(wildcards):
     if profile == "eia":
         return DATA + "GridEmissions/EIA_DMD_2018_2024.csv"
     elif profile == "wus":
-        return DATA + "wus/tai_clean_combined_formatted_big-boi_w-filler_SCALED.csv"
+        return DATA + "wus/miroc6_wecc-demand_one-filler_smol.csv"
     elif profile == "efs":
         efs_case = config["electricity"]["demand"]["scenario"]["efs_case"].capitalize()
         efs_speed = config["electricity"]["demand"]["scenario"][
@@ -336,7 +336,7 @@ rule build_electrical_demand:
         BENCHMARKS + "{interconnect}/{end_use}_build_demand"
     threads: 2
     resources:
-        mem_mb=lambda wildcards, input, attempt: (input.size // 70000) * attempt * 2,
+        mem_mb=8000 #lambda wildcards, input, attempt: (input.size // 70000) * attempt * 5,
     script:
         "../scripts/build_demand.py"
 
@@ -665,7 +665,7 @@ rule simplify_network:
         "logs/simplify_network/{interconnect}/elec_s{simpl}.log",
     threads: 1
     resources:
-        mem_mb=lambda wildcards, input, attempt: (input.size // 100000) * attempt * 1.5,
+        mem_mb= 32000 #lambda wildcards, input, attempt: (input.size // 100000) * attempt * 1.5,
     script:
         "../scripts/simplify_network.py"
 
@@ -786,7 +786,7 @@ rule prepare_network:
             else RESOURCES
             + f"costs/costs_{config['scenario']['planning_horizons'][0]}.csv"
         ),
-        dlr=DATA + "wus/no_dlr_tamu_big-boi.csv",
+        dlr=DATA + "wus/miroc6_dlr_CA.csv",
     output:
         RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}.nc",
     log:
