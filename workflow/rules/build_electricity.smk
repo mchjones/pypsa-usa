@@ -321,7 +321,7 @@ rule build_electrical_demand:
     params:
         demand_params=config["electricity"]["demand"],
         eia_api=config["api"]["eia"],
-        profile_year=pd.to_datetime(config["snapshots"]["start"]).year,
+        profile_year=pd.to_datetime(config["snapshots"][str(config["renewable_weather_years"][0])]["start"]).year,
         planning_horizons=config["scenario"]["planning_horizons"],
         snapshots=config["snapshots"],
         pudl_path=config_provider("pudl_path"),
@@ -347,7 +347,7 @@ rule build_service_demand:
         end_use="residential|commercial",
     params:
         planning_horizons=config_provider("scenario", "planning_horizons"),
-        profile_year=pd.to_datetime(config["snapshots"]["start"]).year,
+        profile_year=pd.to_datetime(config["snapshots"][str(config["renewable_weather_years"][0])]["start"]).year,
         eia_api=config_provider("api", "eia"),
         snapshots=config_provider("snapshots"),
         pudl_path=config_provider("pudl_path"),
@@ -377,7 +377,7 @@ rule build_industry_demand:
         end_use="industry",
     params:
         planning_horizons=config_provider("scenario", "planning_horizons"),
-        profile_year=pd.to_datetime(config["snapshots"]["start"]).year,
+        profile_year=pd.to_datetime(config["snapshots"][str(config["renewable_weather_years"][0])]["start"]).year,
         eia_api=config_provider("api", "eia"),
         snapshots=config_provider("snapshots"),
         pudl_path=config_provider("pudl_path"),
@@ -405,7 +405,7 @@ rule build_transport_road_demand:
         end_use="transport",
     params:
         planning_horizons=config_provider("scenario", "planning_horizons"),
-        profile_year=pd.to_datetime(config["snapshots"]["start"]).year,
+        profile_year=pd.to_datetime(config["snapshots"][str(config["renewable_weather_years"][0])]["start"]).year,
         eia_api=config_provider("api", "eia"),
         snapshots=config_provider("snapshots"),
     input:
@@ -666,6 +666,8 @@ rule simplify_network:
         + "{interconnect}/Geospatial/regions_onshore_s{simpl}.geojson",
         regions_offshore=RESOURCES
         + "{interconnect}/Geospatial/regions_offshore_s{simpl}.geojson",
+        linemap_sub=RESOURCES + "{interconnect}/linemap_sub_pre-s{simpl}.csv",
+        linemap_simpl=RESOURCES + "{interconnect}/linemap_s{simpl}.csv",
     log:
         "logs/simplify_network/{interconnect}/elec_s{simpl}.log",
     threads: 1
@@ -747,17 +749,20 @@ rule add_extra_components:
         ),
         regions_onshore=RESOURCES
         + "{interconnect}/Geospatial/regions_onshore_s{simpl}_{clusters}.geojson",
+        elev_ref=DATA+"wus/elevation_reference.csv"
     params:
         retirement=config["electricity"].get("retirement", "technical"),
         demand_response=config["electricity"].get("demand_response", {}),
         trim_network=config_provider("model_topology", "trim", default=False),
+        snapshots=config_provider("snapshots"),
     output:
-        RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec.nc",
+        RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec_{dlr}.nc",
+        dlr_path=DATA + "wus/{interconnect}/" + config["gcm"] + "_s{simpl}_c{clusters}_{dlr}.csv"
     log:
-        "logs/add_extra_components/{interconnect}/elec_s{simpl}_c{clusters}_ec.log",
+        "logs/add_extra_components/{interconnect}/elec_s{simpl}_c{clusters}_ec_{dlr}.log",
     threads: 1
     resources:
-        mem_mb=lambda wildcards, input, attempt: (input.size // 100000) * attempt * 2,
+        mem_mb=180000, #lambda wildcards, input, attempt: (input.size // 100000) * attempt * 2,
     group:
         "prepare"
     script:
@@ -783,7 +788,7 @@ rule prepare_network:
             config["custom_files"]["files_path"]
             + config["custom_files"]["network_name"]
             if config["custom_files"].get("activate", False)
-            else RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec.nc"
+            else RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec_{dlr}.nc"
         ),
         tech_costs=(
             config["custom_files"]["files_path"] + "costs_2030.csv"
@@ -791,11 +796,11 @@ rule prepare_network:
             else RESOURCES
             + f"costs/costs_{config['scenario']['planning_horizons'][0]}.csv"
         ),
-        dlr=DATA + config['dlr_path'],
+        dlr= DATA + "wus/{interconnect}/" + config["gcm"] + "_s{simpl}_c{clusters}_{dlr}.csv", 
     output:
-        RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}.nc",
+        RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{dlr}.nc",
     log:
-        solver="logs/prepare_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}.log",
+        solver="logs/prepare_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{dlr}.log",
     threads: 1
     resources:
         mem_mb=lambda wildcards, input, attempt: (input.size // 100000) * attempt * 2,

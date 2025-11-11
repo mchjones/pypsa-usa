@@ -235,6 +235,6 @@ if __name__ == "__main__":
 
     build_pudl_fuel_costs(
         snapshots,
-        snakemake.params.snapshots["start"],
-        snakemake.params.snapshots["end"],
+        snakemake.params.snapshots[str(snakemake.config["renewable_weather_years"][0])]["start"],
+        snakemake.params.snapshots[str(snakemake.config["renewable_weather_years"][0])]["end"],
     )

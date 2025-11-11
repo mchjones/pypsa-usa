@@ -26,7 +26,7 @@ rule solve_network:
         transmission_network=config_provider("model_topology", "transmission_network"),
     input:
         network=RESOURCES
-        + "{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}.nc",
+        + "{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}.nc",
         flowgates="repo_data/ReEDS_Constraints/transmission/transmission_capacity_init_AC_ba_NARIS2024.csv",
         safer_reeds="config/policy_constraints/reeds/prm_annual.csv",
         rps_reeds="config/policy_constraints/reeds/rps_fraction.csv",
@@ -35,25 +35,25 @@ rule solve_network:
         ev_policy=ev_policy_input,
     output:
         network=RESULTS
-        + "{interconnect}/networks/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}.nc",
+        + "{interconnect}/networks/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}.nc",
         config=RESULTS
-        + "{interconnect}/configs/config.elec_s{simpl}_c{clusters}_l{ll}_{opts}_{sector}.yaml",
+        + "{interconnect}/configs/config.elec_s{simpl}_c{clusters}_l{ll}_{opts}_{sector}_{dlr}.yaml",
     log:
         solver=normpath(
             LOGS
-            + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_solver.log"
+            + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_solver.log"
         ),
         python=LOGS
-        + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_python.log",
+        + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_python.log",
     benchmark:
         (
             BENCHMARKS
-            + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}"
+            + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}"
         )
-    threads: solver_threads
+    threads: 8#solver_threads
     resources:
-        mem_mb=160000, #lambda wildcards, input, attempt: (input.size // 100000) * attempt * 80,
-        walltime=config["solving"].get("walltime", "12:00:00"),
+        mem_mb=120000, #lambda wildcards, input, attempt: (input.size // 100000) * attempt * 80,
+        walltime=config["solving"].get("walltime", "72:00:00"),
     conda:
         "../envs/environment.yaml"
     script:

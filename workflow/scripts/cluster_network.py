@@ -264,6 +264,7 @@ def busmap_for_n_clusters(
         logger.warning(
             f"Reconciling TAMU and ReEDS Topologies. \n Removing buses: {buses_remove.index}",
         )
+        logger.info(f"Before reconciliation: {len(n.lines)} lines")
         for c in n.one_port_components:
             component = n.df(c)
             rm = component[component.bus.isin(buses_remove.index)]
@@ -276,6 +277,7 @@ def busmap_for_n_clusters(
             n.mremove(c, rm.index)
         n.mremove("Bus", buses_remove.index)
         n.determine_network_topology()
+        logger.info(f"After reconciliation: {len(n.lines)} lines")
 
     def busmap_for_country(x):
         prefix = x.name[0] + x.name[1] + " "
@@ -772,6 +774,122 @@ if __name__ == "__main__":
         else:
             # Use standard transmission cost estimates
             update_transmission_costs(clustering.network, costs)
+
+    # DC-OPF ITL FIX (from Wei, altered for aggregation to county level rather than state)
+    if not transport_model:
+        logger.info("Applying ITL state corrections to transmission lines...")
+
+        # Read ITL state data
+        itl_county = pd.read_csv(snakemake.input.itl_county) #itl_state = pd.read_csv(snakemake.input.itl_state)
+        itl_county.columns = itl_county.columns.str.lower() #itl_state.columns = itl_state.columns.str.lower()
+
+        # Create mapping from interface to maximum capacity
+        # Use the larger value between forward and reverse divided by 0.7 as new s_nom
+        itl_county['max_capacity_mw'] = np.maximum(itl_county['mw_f0'], itl_county['mw_r0'])
+        itl_county['new_s_nom'] = itl_county['max_capacity_mw'] / 0.7
+
+        # Create mapping from region pairs to new s_nom
+        itl_capacity_map = {}
+        for _, row in itl_county.iterrows():
+            # Bidirectional mapping: r->rr and rr->r
+            key1 = f"{row['r']}-{row['rr']}"
+            key2 = f"{row['rr']}-{row['r']}"
+            itl_capacity_map[key1] = row['new_s_nom']
+            itl_capacity_map[key2] = row['new_s_nom']
+
+        # Get lines from the network
+        lines = clustering.network.lines.copy()
+        lines_not_in_itl = []
+        lines_updated = 0
+        capacity_ratios = []
+        capacity_weights = []
+
+        for line_idx in lines.index:
+            line = lines.loc[line_idx]
+            bus0 = clustering.network.buses.loc[line.bus0]
+            bus1 = clustering.network.buses.loc[line.bus1]
+
+            # Determine which field to use based on topological_boundaries
+            if topological_boundaries == "state":
+                region0 = bus0.get('reeds_state', bus0.get('country', ''))
+                region1 = bus1.get('reeds_state', bus1.get('country', ''))
+            elif topological_boundaries == "county":
+                region0 = bus0.get('county', bus0.get('country', ''))
+                region1 = bus1.get('county', bus1.get('country', ''))
+            else:
+                region0 = bus0.get('country', '')
+                region1 = bus1.get('country', '')
+
+            line_key = f"{region0}-{region1}"
+
+            if line_key in itl_capacity_map:
+                # Update line parameters
+                old_s_nom = line['s_nom'] if line['s_nom'] > 0 else 1.0  # Avoid division by zero
+                new_s_nom = itl_capacity_map[line_key]
+                capacity_ratio = new_s_nom / old_s_nom
+
+                # Store ratio and weight for calculating weighted average
+                capacity_ratios.append(capacity_ratio)
+                capacity_weights.append(old_s_nom)
+
+                # Update s_nom
+                clustering.network.lines.loc[line_idx, 's_nom'] = new_s_nom
+
+                # Update other parameters based on power system principles
+                if capacity_ratio != 1.0:
+                    # r (resistance) and x (reactance) are inversely proportional to capacity
+                    # (capacity increase through increased conductor cross-section)
+                    if line['r'] > 0:
+                        clustering.network.lines.loc[line_idx, 'r'] = line['r'] / capacity_ratio
+                    if line['x'] > 0:
+                        clustering.network.lines.loc[line_idx, 'x'] = line['x'] / capacity_ratio
+
+                    # b (susceptance) and g (conductance) are proportional to capacity
+                    clustering.network.lines.loc[line_idx, 'b'] = line['b'] * capacity_ratio
+                    clustering.network.lines.loc[line_idx, 'g'] = line['g'] * capacity_ratio
+
+                    lines_updated += 1
+                    logger.debug(f"Updated line {line_idx}: {region0}-{region1}, "
+                                 f"s_nom: {old_s_nom:.1f} -> {new_s_nom:.1f} MW, "
+                                 f"ratio: {capacity_ratio:.3f}")
+            else:
+                # Lines not present in ITL state, store for later correction
+                lines_not_in_itl.append(line_idx)
+                logger.debug(f"Line {line_idx} not in ITL state: {region0}-{region1}")
+
+        # Calculate weighted average capacity ratio for lines not in ITL state
+        if lines_not_in_itl and capacity_ratios:
+            # Calculate weighted average using s_nom as weights
+            weighted_avg_ratio = np.average(capacity_ratios, weights=capacity_weights)
+
+            logger.info(f"Applying weighted average capacity ratio {weighted_avg_ratio:.3f} "
+                        f"to {len(lines_not_in_itl)} lines not in ITL state")
+
+            for line_idx in lines_not_in_itl:
+                line = clustering.network.lines.loc[line_idx]
+                old_s_nom = line['s_nom'] if line['s_nom'] > 0 else 1.0
+                new_s_nom = old_s_nom * weighted_avg_ratio
+
+                # Update s_nom
+                clustering.network.lines.loc[line_idx, 's_nom'] = new_s_nom
+
+                # Update other parameters
+                if weighted_avg_ratio != 1.0:
+                    # r (resistance) and x (reactance) are inversely proportional to capacity
+                    if line['r'] > 0:
+                        clustering.network.lines.loc[line_idx, 'r'] = line['r'] / weighted_avg_ratio
+                    if line['x'] > 0:
+                        clustering.network.lines.loc[line_idx, 'x'] = line['x'] / weighted_avg_ratio
+
+                    # b (susceptance) and g (conductance) are proportional to capacity
+                    clustering.network.lines.loc[line_idx, 'b'] = line['b'] * weighted_avg_ratio
+                    clustering.network.lines.loc[line_idx, 'g'] = line['g'] * weighted_avg_ratio
+
+                    logger.debug(f"Corrected line {line_idx} with avg ratio: "
+                                 f"s_nom: {old_s_nom:.1f} -> {new_s_nom:.1f} MW")
+
+        logger.info(f"ITL county corrections applied: {lines_updated} lines updated with ITL data, "
+                    f"{len(lines_not_in_itl)} lines corrected with weighted average ratio")
 
     update_p_nom_max(clustering.network)
     clustering.network.generators.land_region = clustering.network.generators.land_region.fillna(

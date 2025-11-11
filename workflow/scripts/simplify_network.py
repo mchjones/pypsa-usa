@@ -141,6 +141,8 @@ def aggregate_to_substations(
             )
 
     network_s = clustering.network
+    logger.info("Exporting linemap")
+    clustering.linemap.to_csv(snakemake.output["linemap_sub"])
 
     network_s.buses["interconnect"] = substations.interconnect
     network_s.buses["x"] = substations.x
@@ -296,6 +298,8 @@ if __name__ == "__main__":
             weighting_strategy=params.simplify_network.get("weighting_strategy", None),
         )
         n = clustering.network
+        logger.info("Exporting linemap")
+        clustering.linemap.to_csv(snakemake.output["linemap_simpl"])
 
         cluster_regions((clustering.busmap,), snakemake.input, snakemake.output)
     else:

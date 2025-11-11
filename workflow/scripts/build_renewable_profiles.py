@@ -49,7 +49,7 @@ def load_WUS_data(planning_horizon: int) -> xr.Dataset:
     #Loads WUS data for given planning horizon#
     base_path = snakemake.config['cf_path']
     logger.info(f"Loading WUS data for planning horizon {planning_horizon} from {base_path}...")
-    file_path = Path(base_path) / f"Solar_Wind_CFs_{planning_horizon}.nc"
+    file_path = Path(base_path) / f"Annual_Solar_Wind/Solar_Wind_CFs_{planning_horizon}.nc"
     
     if not file_path.exists():
         raise FileNotFoundError(f"WUS data file not found at: {file_path}")
@@ -89,11 +89,16 @@ def get_correct_year(
     logger.info(f"Extracting and combining data for {year}")
 
     start_date = str(year) + '-01-01'
+    end_of_begin = str(year) + '-08-31'
+    start_of_end = str(year) + '-09-01'
     end_date = str(year) + '-12-31'
 
-    begin = wus_data_prev.sel(Times=slice(start_date,None))
-    end = wus_data_horizon.sel(Times=slice(None,end_date))
+    begin = wus_data_prev.sel(Times=slice(start_date, end_of_begin))
+    end = wus_data_horizon.sel(Times=slice(start_of_end, end_date))
     combined = xr.concat([begin,end],dim='Times')
+    combined = combined.assign_coords(
+        Times=xr.concat([begin['Times'], end['Times']], dim='Times')
+    )
 
     return combined 
 
