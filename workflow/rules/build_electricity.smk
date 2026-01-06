@@ -749,7 +749,12 @@ rule add_extra_components:
         ),
         regions_onshore=RESOURCES
         + "{interconnect}/Geospatial/regions_onshore_s{simpl}_{clusters}.geojson",
-        elev_ref=DATA+"wus/elevation_reference.csv"
+        elev_ref=DATA+"wus/elevation_reference.csv",
+        base_network=RESOURCES + "{interconnect}/elec_base_network.nc",
+        s_network=RESOURCES + "{interconnect}/elec_s{simpl}.nc",
+        linemap_sub=RESOURCES + "{interconnect}/linemap_sub_pre-s{simpl}.csv",
+        linemap_simpl=RESOURCES + "{interconnect}/linemap_s{simpl}.csv",
+        base_dlr=DATA + "wus"
     params:
         retirement=config["electricity"].get("retirement", "technical"),
         demand_response=config["electricity"].get("demand_response", {}),

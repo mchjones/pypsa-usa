@@ -527,6 +527,10 @@ if __name__ == "__main__":
     )
     pudl_atb = pd.concat([pudl_atb, egs_costs], ignore_index=True)
 
+    # reduced battery cost to approximate bloomberg nef projections
+    #mask = pudl_atb['pypsa-name'].str.contains('battery', case=False) & pudl_atb['parameter'].str.contains('capex', case=False)
+    #pudl_atb.loc[mask, 'value'] = pudl_atb.loc[mask, 'value'] * 0.66
+
     pudl_atb.to_csv(snakemake.output.tech_costs, index=False)
 
     # sector costs

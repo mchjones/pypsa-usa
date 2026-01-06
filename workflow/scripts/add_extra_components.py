@@ -29,7 +29,118 @@ idx = pd.IndexSlice
 
 logger = logging.getLogger(__name__)
 
-# constants used in DLR calculations
+## Weighted average calculations from previously calculated DLRs
+def twomap_onemap(m1,m2):
+    m = m1.copy()
+    m = m.rename(columns={'0': 'linemap'})
+    n = len(m)
+    mapped = m2.index
+    for idx, row in m1.iterrows():
+        if row["0"] in mapped:
+            m.loc[idx] = m2.loc[row["0"],"0"]
+        else:
+            m = m.drop(idx)
+    print(f"Maps converted. {n - len(m)} base system lines dropped.")
+    return m
+
+def get_s_nom_map(base_simpl_linemap,simpl_lines,simpl_line_info,base_line_info):
+    s_nom = {}
+    for line in simpl_lines:
+        s_nom[line] = {}
+        s_nom[line]["total"] = simpl_line_info.loc[str(line),"s_nom"]
+        uc_lines = list(base_simpl_linemap[base_simpl_linemap["linemap"] == line].index)
+        check = 0
+        for l in uc_lines:
+            s = base_line_info.loc[str(l),"s_nom"]
+            s_nom[line][l] = s
+            check += s
+        if np.round(check,2) != np.round(s_nom[line]["total"],2):
+            logger.info(f"Warning: mapping for Line {line} does not add up - clustered line s_nom: {s_nom[line]['total']}, sum of unclustered lines: {check}")
+    return s_nom
+
+def get_weights(simpl_lines,s_nom):
+    weights = {}
+    for line in simpl_lines:
+        weights[line] = {}
+        s_data = s_nom[line]
+        total = s_data["total"]
+        for key, item in s_data.items():
+            if key != "total":
+                value = item/total
+                weights[line][key] = value
+    return weights
+
+def calc_weighted_dlr(weights,base_dlr,lines):
+    c_dlr = pd.DataFrame(index=base_dlr.index,columns=lines)
+    for c_line, w in weights.items():
+        uc_line_weights = pd.Series(w)
+        uc_dlrs = base_dlr[uc_line_weights.index]
+        weighted_dlrs = uc_dlrs * uc_line_weights
+        c_dlr[c_line] = weighted_dlrs.sum(axis=1)
+    return c_dlr
+
+def get_dlr():
+    if snakemake.wildcards.dlr != "none":
+        logger.info("Starting dlr calculation...")
+
+        # get s_nom information for lines in base network and lines in simpl network
+        bn = pypsa.Network(snakemake.input.base_network)
+        sn = pypsa.Network(snakemake.input.s_network)
+        base_line_info = bn.lines[["bus0","bus1","s_nom"]]
+        simpl_line_info = sn.lines[["bus0","bus1","s_nom"]]
+
+        # load linemaps for base > sub, sub > simpl, then combine
+        base_sub_linemap = pd.read_csv(snakemake.input.linemap_sub,header=0,index_col=0)
+        sub_simpl_linemap = pd.read_csv(snakemake.input.linemap_simpl,index_col=0,header=0)
+        base_simpl_linemap = twomap_onemap(base_sub_linemap,sub_simpl_linemap)
+        simpl_lines = list(set(base_simpl_linemap["linemap"]))
+
+        # get s_nom mapping to be used to calculate weights
+        s_nom = get_s_nom_map(base_simpl_linemap,simpl_lines,simpl_line_info,base_line_info)
+        # calculate weights using s_nom mapping
+        weights = get_weights(simpl_lines,s_nom)
+
+        year_relative = {}
+        for i, year in enumerate(snakemake.config['scenario']['planning_horizons']):
+            snap = gen_year_no_leap(year)
+            path = snakemake.input.base_dlr + f"/dlr_{year}_WUS-" + snakemake.config["gcm"] + "_base-dc-line_WECC_phi-fixed_geo-ref.csv"
+            base_dlr = pd.read_csv(path,header=0,index_col=0)
+            base_dlr.columns = base_dlr.columns.astype(int)
+            logger.info(f"Loaded source DLRs from {path}")
+
+            rel = calc_weighted_dlr(weights,base_dlr,simpl_lines)
+            rel.index = pd.DatetimeIndex(snap)
+            year_relative[year] = rel
+
+        logger.info("Yearly weighted DLR calculations complete, stacking")
+        all_relative = pd.concat([year_relative[year] for year in sorted(year_relative.keys())])
+
+        # load base system DLRs
+        #base_dlr = pd.read_csv(snakemake.input.base_dlr,header=0,index_col=0)
+        #base_dlr.columns = base_dlr.columns.astype(int)
+        #all_relative = calc_weighted_dlr(weights,base_dlr,simpl_lines)
+
+        if snakemake.wildcards.dlr == "dlr": # truncate at 1.3
+            dlr = trunk(all_relative,1.3)
+            dlr = dlr.round(3)
+            dlr.to_csv(snakemake.output.dlr_path)
+            logger.info(f"{snakemake.wildcards.dlr} exported to {snakemake.output.dlr_path}.")
+        elif snakemake.wildcards.dlr == "derate": # truncate at 1
+            derate = trunk(all_relative,1)
+            derate = derate.round(3)
+            derate.to_csv(snakemake.output.dlr_path)
+            logger.info(f"{snakemake.wildcards.dlr} exported to {snakemake.output.dlr_path}.")
+        elif snakemake.wildcards.dlr == "slr": # all 1's
+            slr = pd.DataFrame(np.ones_like(all_relative), 
+                      index=all_relative.index, 
+                      columns=all_relative.columns)
+            slr.to_csv(snakemake.output.dlr_path)
+            logger.info(f"{snakemake.wildcards.dlr} exported to {snakemake.output.dlr_path}.")
+           
+    else:
+        logger.info(f"DLR is set to {snakemake.wildcards.dlr}. No DLR added")
+
+## if you're doing raw DLR calculations with clustered bus locations in the PyPSA-USA workflow
 constant_inputs = {
     "T_s": 100,
     "T_avg": 100,
@@ -126,7 +237,7 @@ def calculate_dlr(n):
            
     else:
         logger.info(f"DLR is set to {snakemake.wildcards.dlr}. No DLR added")
-
+## raw calculations direct in PyPSA-USA workflow
 
 def add_co2_emissions(n, costs, carriers):
     """Add CO2 emissions to the network's carriers attribute."""
@@ -1009,7 +1120,8 @@ if __name__ == "__main__":
     n = pypsa.Network(snakemake.input.network)
     elec_config = snakemake.config["electricity"]
 
-    calculate_dlr(n)
+    #calculate_dlr(n)
+    get_dlr()
 
     costs_dict = {
         n.investment_periods[i]: pd.read_csv(snakemake.input.tech_costs[i]).pivot(
