@@ -337,7 +337,7 @@ rule build_electrical_demand:
         BENCHMARKS + "{interconnect}/{end_use}_build_demand"
     threads: 2
     resources:
-        mem_mb=8000 #lambda wildcards, input, attempt: (input.size // 70000) * attempt * 5,
+        mem_mb=16000 #lambda wildcards, input, attempt: (input.size // 70000) * attempt * 5,
     script:
         "../scripts/build_demand.py"
 

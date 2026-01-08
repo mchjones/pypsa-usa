@@ -17,8 +17,12 @@ def add_bidirectional_link_constraints(n):
 
     # Find potential bidirectional link pairs
     # These are links that contain either '_fwd' or '_rev' at the end of their names
+    if extendable_links.empty:
+        logger.info("No extendable links found — skipping constraints.")
+        return
+    
     bidirectional_candidates = extendable_links[
-        extendable_links.index.str.contains(r"_fwd$|_rev$", regex=True, case=True)
+        extendable_links.index.str.contains(r"_fwd$|_rev$", regex=True, case=True) #index
     ]
 
     if bidirectional_candidates.empty:

@@ -74,7 +74,7 @@ wildcard_constraints:
     ll="(v|c)([0-9\.]+|opt|all)|all",
     opts="[-+a-zA-Z0-9\.]*",
     sector="([EG]-)*[EG]",
-    dlr="dlr|slr|derate|aar|none",
+    dlr="dlr|slr|derate|aar|discount|none",
 
 # -------------------------- Config and Subworkflows ------------------------- #
 
