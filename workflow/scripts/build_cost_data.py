@@ -440,6 +440,20 @@ if __name__ == "__main__":
         values="value",
     ).reset_index()
 
+    # insert NREL battery cost alterations
+    batt_alt = atb_params.get("nrel_battery_alt", "none")
+    if batt_alt != "none":
+        year = snakemake.wildcards.year
+        path = snakemake.input.base_nrel_alt + f"/nrel_2025-batt-update_{batt_alt}.csv"
+        nrel_batt = pd.read_csv(path,index_col=0,header=0)
+        logger.info(nrel_batt)
+        for x in [2, 4, 6, 8, 10]:
+            pivot_atb.loc[
+                pivot_atb["pypsa-name"] == f"{x}hr_battery_storage",
+                "capex_per_kw",
+            ] = nrel_batt.loc[int(year),str(x)]
+        logger.info(f"Battery costs have been updated with {batt_alt} NREL 2025 adjustment.")
+
     # Create Hydrogen Combustion Turbine from OCGT using assumptions per ReEDS
     # https://nrel.github.io/ReEDS-2.0/model_documentation.html#hydrogen
     hydrogen_ct = pivot_atb[pivot_atb["pypsa-name"] == "OCGT"].copy()

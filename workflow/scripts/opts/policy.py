@@ -269,9 +269,16 @@ def add_RPS_constraints(n, config, sector, snakemake=None):
         ces_carriers,
         value_col="pct",
     )
+    rps_reeds['notes'] = "rps"
+    ces_reeds['notes'] = "ces"
 
     # Concatenate all portfolio standards
     portfolio_standards = pd.concat([portfolio_standards, rps_reeds, ces_reeds])
+
+    portfolio_standards["planning_horizon"] = pd.to_numeric(
+        portfolio_standards["planning_horizon"],
+        errors="coerce",
+    )
 
     portfolio_standards = portfolio_standards[
         (portfolio_standards.pct > 0.0)
@@ -282,6 +289,8 @@ def add_RPS_constraints(n, config, sector, snakemake=None):
         )
         & (portfolio_standards.region.isin(n.buses.reeds_state.unique()))
     ]
+
+    logger.info(portfolio_standards)
 
     mapper = n.buses.groupby("reeds_state")["rec_trading_zone"].first().to_dict()
     portfolio_standards["rec_trading_zone"] = portfolio_standards.region.map(mapper).fillna(portfolio_standards.region)
@@ -300,6 +309,9 @@ def add_RPS_constraints(n, config, sector, snakemake=None):
         )
         region_rps_rhs = int(constraint_row.pct * region_demand)
         portfolio_standards.loc[constraint_row.name, "rps_rhs"] = region_rps_rhs
+
+        region_rps_prop = constraint_row.pct
+        portfolio_standards.loc[constraint_row.name, "rps_prop"] = region_rps_prop
 
         if sector:
             # power level buses
@@ -335,9 +347,14 @@ def add_RPS_constraints(n, config, sector, snakemake=None):
                 period=planning_horizon,
                 Generator=region_gens_eligible.index,
             )
+            p_all = n.model["Generator-p"].sel(
+                period=planning_horizon
+            )
+            p_all_sum = p_all.sum()
             renewable_gen = zone_constraints.rps_rhs.sum()
-            lhs = p_eligible.sum() - renewable_gen
+            lhs = p_eligible.sum() - p_all_sum*zone_constraints.rps_prop.sum() #renewable_gen
             rhs = 0
+            logger.info(f"{zone_constraints.rps_prop.sum()}")
 
         elif sector:
             # generator power contributing
@@ -352,13 +369,14 @@ def add_RPS_constraints(n, config, sector, snakemake=None):
         else:
             logger.error("Undefined control flow for RPS constraint.")
 
-        n.model.add_constraints(
+        con = n.model.add_constraints(
             lhs >= rhs,
-            name=f"GlobalConstraint-{rec_trading_zone}_{planning_horizon}_rps_limit",
+            name=f"GlobalConstraint-{rec_trading_zone}_{planning_horizon}_{zone_constraints['notes'].iloc[0]}_limit", #name=f"GlobalConstraint-{rec_trading_zone}_{planning_horizon}_rps_limit",
         )
+        logger.info(con)
 
         logger.info(
-            f"Added RPS constraint '{rec_trading_zone}' for {planning_horizon} "
+            f"Added {zone_constraints['notes'].iloc[0]} constraint '{rec_trading_zone}' for {planning_horizon} "
             f"requiring {renewable_gen / 1e6:.1f} TWh of {policy_carriers} generation ",
         )
 
