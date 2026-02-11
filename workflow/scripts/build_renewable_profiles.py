@@ -22,6 +22,13 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+gcm_folders = {
+    "miroc6": "miroc6_r1i1p1f1_ssp370_bc",
+    "ec3": "ec-earth3_r1i1p1f1_ssp370_bc",
+    "ec3veg": "ec-earth3-veg_r1i1p1f1_ssp370_bc",
+    "mpi": "mpi-esm1-2-hr_r3i1p1f1_ssp370_bc",
+    "taiesm1": "taiesm1_r1i1p1f1_ssp370_bc"
+}
 
 def plot_data(data):
     x = data.coords["x"].values  # Longitude
@@ -45,11 +52,17 @@ def get_buses(profile):
     buses = [int(x) for x in profile['bus'].values]
     return buses
 
-def load_WUS_data(planning_horizon: int) -> xr.Dataset:
+def load_WUS_data(planning_horizon: int, tech: str) -> xr.Dataset:
     #Loads WUS data for given planning horizon#
-    base_path = snakemake.config['cf_path']
-    logger.info(f"Loading WUS data for planning horizon {planning_horizon} from {base_path}...")
-    file_path = Path(base_path) / f"Annual_Solar_Wind/Solar_Wind_CFs_{planning_horizon}.nc"
+    gcm = snakemake.config['gcm']
+    base_path = "/nfs/turbo/seas-mtcraig-climate/WRFDownscaled/" + gcm_folders[gcm]
+
+    if tech == "solar":
+        file_path = Path(base_path) / f"Annual_Solar_Wind/Solar_Wind_CFs_{planning_horizon}.nc"
+    if tech == "onwind" or tech == "offwind_floating":
+        file_path = Path(base_path) / f"Annual_Solar_Wind/TYPEIII_Wind_CFs_{planning_horizon}.nc"
+
+    logger.info(f"Loading WUS data for planning horizon {planning_horizon} from {file_path}...")
     
     if not file_path.exists():
         raise FileNotFoundError(f"WUS data file not found at: {file_path}")
@@ -423,8 +436,8 @@ if __name__ == "__main__":
         index = snakemake.config['renewable_weather_years'].index(int(snakemake.wildcards.renewable_weather_years))
         wus_year = snakemake.config['scenario']['planning_horizons'][index]
 
-        wus_data_horizon = load_WUS_data(wus_year)
-        wus_data_prev = load_WUS_data(int(wus_year)-1)
+        wus_data_horizon = load_WUS_data(wus_year,snakemake.wildcards.technology)
+        wus_data_prev = load_WUS_data(int(wus_year)-1,snakemake.wildcards.technology)
         wus_data = get_correct_year(wus_data_horizon,wus_data_prev,wus_year)
 
         wus_profile = generate_wus_profile(ds,wus_data,buses,bus_coords,snakemake.wildcards.technology,sns)

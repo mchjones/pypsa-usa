@@ -238,7 +238,7 @@ def demand_raw_data(wildcards):
     if profile == "eia":
         return DATA + "GridEmissions/EIA_DMD_2018_2024.csv"
     elif profile == "wus":
-        return DATA + config['gcm_demand_path']
+        return DATA + f"wus/{config['gcm']}_wecc-demand_one-filler.csv" #config['gcm_demand_path']
     elif profile == "efs":
         efs_case = config["electricity"]["demand"]["scenario"]["efs_case"].capitalize()
         efs_speed = config["electricity"]["demand"]["scenario"][

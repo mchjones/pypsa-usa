@@ -234,6 +234,10 @@ def load_powerplants(
     # If operational_status is existing or proposed, replace generator_retirement_date with 1/1/2100
     retirement_date = pd.to_datetime("2100-01-01")
     plants.loc[plants.operational_status.isin(["existing", "proposed"]), "generator_retirement_date"] = retirement_date
+    if snakemake.config["electricity"]["include_palisades"]:
+        logger.info(f"Artificially moving retirement date of Palisades to {retirement_date}")
+        logger.info(plants.loc[(plants["plant_name_eia"].str.contains("Palisades", case=False, na=False)) & (plants["carrier"] == "nuclear")])
+        plants.loc[(plants["plant_name_eia"].str.contains("Palisades", case=False, na=False)) & (plants["carrier"] == "nuclear"), "generator_retirement_date"] = retirement_date
 
     # Handle NaT values
     plants.loc[plants.generator_retirement_date.isna(), "generator_retirement_date"] = pd.to_datetime("1900-01-01")

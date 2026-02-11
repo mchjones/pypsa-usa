@@ -109,20 +109,23 @@ def get_dlr():
         # calculate weights using s_nom mapping
         weights = get_weights(simpl_lines,s_nom)
 
-        if snakemake.wildcards.dlr == "dlr" or snakemake.wildcards.dlr == "derate":
+        if snakemake.wildcards.dlr == "dlr" or snakemake.wildcards.dlr == "aar" or snakemake.wildcards.dlr == "derate":
             year_relative = {}
             for i, year in enumerate(snakemake.config['scenario']['planning_horizons']):
                 snap = gen_year_no_leap(year)
-                path = snakemake.input.base_dlr + f"/dlr_{year}_WUS-" + snakemake.config["gcm"] + "_base-dc-line_WECC_phi-fixed_geo-ref.csv"
+                if snakemake.wildcards.dlr == "dlr" or snakemake.wildcards.dlr == "derate":
+                    path = snakemake.input.base_dlr + f"/dlr_{year}_WUS-" + snakemake.config["gcm"] + "_base-dc-line_WECC_phi-fixed_geo-ref.csv"
+                elif snakemake.wildcards.dlr == "aar":
+                    path = snakemake.input.base_dlr + f"/aar_{year}_WUS-" + snakemake.config["gcm"] + "_base-dc-line_WECC_phi-fixed_NOT-TRUNK.csv"
                 base_dlr = pd.read_csv(path,header=0,index_col=0)
                 base_dlr.columns = base_dlr.columns.astype(int)
-                logger.info(f"Loaded source DLRs from {path}")
+                logger.info(f"Loaded source {snakemake.wildcards.dlr} from {path}")
 
                 rel = calc_weighted_dlr(weights,base_dlr,simpl_lines)
                 rel.index = pd.DatetimeIndex(snap)
                 year_relative[year] = rel
 
-            logger.info("Yearly weighted DLR calculations complete, stacking")
+            logger.info("Yearly weighted rating calculations complete, stacking")
             all_relative = pd.concat([year_relative[year] for year in sorted(year_relative.keys())])
         else:
             sns = sn.snapshots.get_level_values(1)
@@ -139,6 +142,10 @@ def get_dlr():
             dlr = trunk(all_relative,1.3)
             dlr = dlr.round(3)
             dlr.to_csv(snakemake.output.dlr_path)
+        elif snakemake.wildcards.dlr == "aar": # truncate at 1.3
+            aar = trunk(all_relative,1.3)
+            aar = aar.round(3)
+            aar.to_csv(snakemake.output.dlr_path)
         elif snakemake.wildcards.dlr == "derate": # truncate at 1
             derate = trunk(all_relative,1)
             derate = derate.round(3)

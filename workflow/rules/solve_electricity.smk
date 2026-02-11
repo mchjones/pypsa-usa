@@ -35,20 +35,20 @@ rule solve_network:
         ev_policy=ev_policy_input,
     output:
         network=RESULTS
-        + "{interconnect}/networks/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}.nc",
+        + "{interconnect}/networks/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{alt}.nc",
         config=RESULTS
-        + "{interconnect}/configs/config.elec_s{simpl}_c{clusters}_l{ll}_{opts}_{sector}_{dlr}.yaml",
+        + "{interconnect}/configs/config.elec_s{simpl}_c{clusters}_l{ll}_{opts}_{sector}_{dlr}_{alt}.yaml",
     log:
         solver=normpath(
             LOGS
-            + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_solver.log"
+            + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{alt}_solver.log"
         ),
         python=LOGS
-        + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_python.log",
+        + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{alt}_python.log",
     benchmark:
         (
             BENCHMARKS
-            + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}"
+            + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{alt}"
         )
     threads: 8#solver_threads
     resources:

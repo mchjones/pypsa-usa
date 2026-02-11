@@ -325,60 +325,121 @@ def add_RPS_constraints(n, config, sector, snakemake=None):
             region_rps_rhs_sector = int(constraint_row.pct * region_demand_sector)
             portfolio_standards.loc[constraint_row.name, "rps_rhs_sector"] = region_rps_rhs_sector
 
-    # Iterate through constraints and add RPS constraints to the model
-    for (rec_trading_zone, planning_horizon, policy_carriers), zone_constraints in portfolio_standards.groupby(
-        ["rec_trading_zone", "planning_horizon", "carrier"],
-    ):
-        if planning_horizon not in model_horizon:
-            continue
-        region_buses = get_region_buses(n, zone_constraints.region.unique())
-        carriers = [carrier.strip() for carrier in policy_carriers.split(",")]
+    if config["run"]["name"] == "mi_rps":
+        logger.info(f"Doing fancy RPS because run name is set to {config['run']['name']}.")
+        # fancy RPS that does the percentage of generation rather than deriving from load (so it works with losses) - but was failing for the WECC runs idk why
 
-        # Filter region generators
-        region_gens = n.generators[n.generators.bus.isin(region_buses.index)]
-        region_gens_eligible = region_gens[region_gens.carrier.isin(carriers)]
+        # Iterate through constraints and add RPS constraints to the model
+        #for (rec_trading_zone, planning_horizon, policy_carriers), zone_constraints in portfolio_standards.groupby(
+        #    ["rec_trading_zone", "planning_horizon", "carrier"],
+        #):
+        for idx, zone_constraints in portfolio_standards.iterrows():
+            planning_horizon = zone_constraints["planning_horizon"]
+            policy_carriers = zone_constraints["carrier"]
+            state = zone_constraints["region"]
 
-        if region_gens_eligible.empty:
-            return
+            if planning_horizon not in model_horizon:
+                continue
+            region_buses = get_region_buses(n, [state]) #region_buses = get_region_buses(n, zone_constraints.region.unique())
+            print(f"{state}: {len(region_buses)} buses")
+            carriers = [carrier.strip() for carrier in policy_carriers.split(",")]
 
-        elif not sector:
-            # Eligible generation
-            p_eligible = n.model["Generator-p"].sel(
-                period=planning_horizon,
-                Generator=region_gens_eligible.index,
+            # Filter region generators
+            region_gens = n.generators[n.generators.bus.isin(region_buses.index)]
+            region_gens_eligible = region_gens[region_gens.carrier.isin(carriers)]
+
+            if region_gens_eligible.empty:
+                return
+
+            elif not sector:
+                # Eligible generation
+                p_eligible = n.model["Generator-p"].sel(
+                    period=planning_horizon,
+                    Generator=region_gens_eligible.index,
+                )
+                p_all = n.model["Generator-p"].sel(
+                    period=planning_horizon
+                )
+                p_all_sum = p_all.sum()
+                renewable_gen = zone_constraints.rps_rhs#.sum()
+                lhs = p_eligible.sum() - p_all_sum*zone_constraints.rps_prop#.mean() #renewable_gen
+                rhs = 0
+                logger.info(f"{zone_constraints.rps_prop}")
+
+            elif sector:
+                # generator power contributing
+                p_eligible = n.model["Generator-p"].sel(
+                    period=planning_horizon,
+                    Generator=region_gens_eligible.index,
+                )
+                renewable_gen = zone_constraints.rps_rhs_sector.sum()
+                lhs = p_eligible.sum() - renewable_gen
+                rhs = 0
+
+            else:
+                logger.error("Undefined control flow for RPS constraint.")
+
+            con = n.model.add_constraints(
+                lhs >= rhs,
+                name=f"GlobalConstraint-{state}_{planning_horizon}_{zone_constraints['notes']}_limit", #name=f"GlobalConstraint-{rec_trading_zone}_{planning_horizon}_rps_limit",
             )
-            p_all = n.model["Generator-p"].sel(
-                period=planning_horizon
+            logger.info(con)
+
+            logger.info(
+                f"Added {state} constraint '{zone_constraints['region']}' for {planning_horizon} "
+                f"requiring {renewable_gen / 1e6:.1f} TWh of {policy_carriers} generation ",
             )
-            p_all_sum = p_all.sum()
-            renewable_gen = zone_constraints.rps_rhs.sum()
-            lhs = p_eligible.sum() - p_all_sum*zone_constraints.rps_prop.sum() #renewable_gen
-            rhs = 0
-            logger.info(f"{zone_constraints.rps_prop.sum()}")
+        
+    else:
+        logger.info(f"Doing normal RPS (load percentage) because run name is {config['run']['name']} (not mi_rps)")
+        # Iterate through constraints and add RPS constraints to the model
+        for (rec_trading_zone, planning_horizon, policy_carriers), zone_constraints in portfolio_standards.groupby(
+            ["rec_trading_zone", "planning_horizon", "carrier"],
+        ):
+            if planning_horizon not in model_horizon:
+                continue
+            region_buses = get_region_buses(n, zone_constraints.region.unique())
+            carriers = [carrier.strip() for carrier in policy_carriers.split(",")]
 
-        elif sector:
-            # generator power contributing
-            p_eligible = n.model["Generator-p"].sel(
-                period=planning_horizon,
-                Generator=region_gens_eligible.index,
+            # Filter region generators
+            region_gens = n.generators[n.generators.bus.isin(region_buses.index)]
+            region_gens_eligible = region_gens[region_gens.carrier.isin(carriers)]
+
+            if region_gens_eligible.empty:
+                return
+
+            elif not sector:
+                # Eligible generation
+                p_eligible = n.model["Generator-p"].sel(
+                    period=planning_horizon,
+                    Generator=region_gens_eligible.index,
+                )
+                renewable_gen = zone_constraints.rps_rhs.sum()
+                lhs = p_eligible.sum() - renewable_gen
+                rhs = 0
+
+            elif sector:
+                # generator power contributing
+                p_eligible = n.model["Generator-p"].sel(
+                    period=planning_horizon,
+                    Generator=region_gens_eligible.index,
+                )
+                renewable_gen = zone_constraints.rps_rhs_sector.sum()
+                lhs = p_eligible.sum() - renewable_gen
+                rhs = 0
+
+            else:
+                logger.error("Undefined control flow for RPS constraint.")
+
+            n.model.add_constraints(
+                lhs >= rhs,
+                name=f"GlobalConstraint-{rec_trading_zone}_{planning_horizon}__{zone_constraints['notes'].iloc[0]}_limit",
             )
-            renewable_gen = zone_constraints.rps_rhs_sector.sum()
-            lhs = p_eligible.sum() - renewable_gen
-            rhs = 0
 
-        else:
-            logger.error("Undefined control flow for RPS constraint.")
-
-        con = n.model.add_constraints(
-            lhs >= rhs,
-            name=f"GlobalConstraint-{rec_trading_zone}_{planning_horizon}_{zone_constraints['notes'].iloc[0]}_limit", #name=f"GlobalConstraint-{rec_trading_zone}_{planning_horizon}_rps_limit",
-        )
-        logger.info(con)
-
-        logger.info(
-            f"Added {zone_constraints['notes'].iloc[0]} constraint '{rec_trading_zone}' for {planning_horizon} "
-            f"requiring {renewable_gen / 1e6:.1f} TWh of {policy_carriers} generation ",
-        )
+            logger.info(
+                f"Added RPS constraint '{rec_trading_zone}' for {planning_horizon} "
+                f"requiring {renewable_gen / 1e6:.1f} TWh of {policy_carriers} generation ",
+            )
 
 
 def add_regional_co2limit(n, config):

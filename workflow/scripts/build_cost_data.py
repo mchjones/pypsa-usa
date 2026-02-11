@@ -5,12 +5,13 @@ import logging
 import constants as const
 import duckdb
 import pandas as pd
-from _helpers import calculate_annuity
+from _helpers import calculate_annuity, configure_logging
 from build_sector_costs import (
     EfsIceTransportationData,
     EfsTechnologyData,
     EiaBuildingData,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +231,8 @@ if __name__ == "__main__":
     else:
         rootpath = "."
 
+    configure_logging(snakemake)
+
     costs = snakemake.params.costs
     atb_params = costs.get("atb")
     aeo_params = costs.get("aeo")
@@ -280,6 +283,40 @@ if __name__ == "__main__":
         )
     else:
         pudl_atb = pudl_atb_filt
+
+    renew_alt = atb_params.get("renewable_alt", "none")
+    logger.info(renew_alt)
+    if renew_alt == "adv" and atb_params.get("scenario", "Moderate") != "Advanced": # get advanced scenario for renewables only
+        logger.info("Getting Advanced Market scenario for renewables (wind, solar) only.")
+        pudl_atb_adv = pudl_atb[pudl_atb.scenario_atb == "Advanced"]
+        pudl_atb_adv = pudl_atb_adv[pudl_atb_adv.model_case_nrelatb == "Market"]
+
+        pudl_adv_premelt = pudl_atb_adv.copy()
+        # Pivot Data
+        cols = [
+            "cost_recovery_period_years",
+            "capacity_factor",
+            "capex_per_kw",
+            "capex_overnight_per_kw",
+            "capex_overnight_additional_per_kw",
+            "capex_grid_connection_per_kw",
+            "capex_construction_finance_factor",
+            "fuel_cost_per_mwh",
+            "heat_rate_mmbtu_per_mwh",
+            "heat_rate_penalty",
+            "levelized_cost_of_energy_per_mwh",
+            "net_output_penalty",
+            "opex_fixed_per_kw",
+            "opex_variable_per_mwh",
+            "wacc_real",
+        ]
+        # pivot such that cols all get moved to one column
+        pudl_atb_adv = pudl_atb_adv.melt(
+            id_vars="pypsa-name",
+            value_vars=cols,
+            var_name="parameter",
+            value_name="value",
+        )
 
     pudl_atb = pudl_atb[pudl_atb.scenario_atb == atb_params.get("scenario", "Moderate")]
     pudl_atb = pudl_atb[pudl_atb.model_case_nrelatb == atb_params.get("model_case", "Market")]
@@ -377,6 +414,21 @@ if __name__ == "__main__":
         keep="last",
     )
 
+    if renew_alt == "adv" and atb_params.get("scenario", "Moderate") != "Advanced":
+        pudl_atb_adv = pd.concat(
+            [
+                pudl_atb_adv,
+                pd.DataFrame(emissions_data),
+                pd.DataFrame(transmission_data),
+                pd.DataFrame(LIFETIME_DATA),
+            ],
+            ignore_index=True,
+        )
+        pudl_atb_adv = pudl_atb_adv.drop_duplicates(
+            subset=["pypsa-name", "parameter"],
+            keep="last",
+        )
+
     # Load AEO Fuel Cost Data
     aeo = load_pudl_aeo_data(parquet_path)
     aeo = aeo[aeo.projection_year == tech_year]
@@ -439,6 +491,48 @@ if __name__ == "__main__":
         columns="parameter",
         values="value",
     ).reset_index()
+    logger.info(pivot_atb)
+
+    if renew_alt == "adv" and atb_params.get("scenario", "Moderate") != "Advanced":
+        pudl_atb_adv = pd.concat([pudl_atb_adv, aeo], ignore_index=True)
+        pivot_atb_adv = pudl_atb_adv.pivot(
+            index="pypsa-name",
+            columns="parameter",
+            values="value",
+        ).reset_index()
+
+        # replace values in pudl_atb with values from pudl_atb_adv if pypsa-usa name is "solar" or "onwind"
+        logger.info("Replacing solar and wind costs with Advanced Market values.")
+        tech = ["onwind", "solar"]
+
+        # Merge the two pivoted dataframes
+        df = pivot_atb.merge(
+            pivot_atb_adv,
+            on="pypsa-name",
+            how="left",
+            suffixes=("", "_adv")
+        )
+
+        logger.info(df[df["pypsa-name"].isin(tech)].head())
+
+        # For each parameter column that exists in both dataframes,
+        # replace values for renewable techs with the advanced scenario values
+        mask = df["pypsa-name"].isin(tech)
+
+        # Get list of parameter columns (exclude pypsa-name and any _adv columns)
+        param_cols = [col for col in pivot_atb.columns if col != "pypsa-name"]
+
+        for param in param_cols:
+            adv_col = f"{param}_adv"
+            if adv_col in df.columns:
+                # Update the parameter with advanced values where they exist
+                df.loc[mask & df[adv_col].notna(), param] = df.loc[mask & df[adv_col].notna(), adv_col]
+                # Drop the _adv column
+                df = df.drop(columns=adv_col)
+
+        logger.info(df[df["pypsa-name"].isin(tech)].head())
+
+        pivot_atb = df
 
     # insert NREL battery cost alterations
     batt_alt = atb_params.get("nrel_battery_alt", "none")
