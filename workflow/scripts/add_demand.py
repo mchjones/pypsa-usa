@@ -68,6 +68,12 @@ if __name__ == "__main__":
         carrier = "AC"
 
         df = pd.read_csv(demand_files[0], index_col=0)
+
+        logger.info(f"Scaling demand by {snakemake.params.scale}x")
+        logger.info(f"Pre-scale mean: {df.mean().mean()}")
+        df = df*snakemake.params.scale
+        logger.info(f"Post-scale mean: {df.mean().mean()}")
+
         attach_demand(n, df, carrier, suffix)
         logger.info("Electricity demand added to network")
 

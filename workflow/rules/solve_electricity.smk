@@ -53,7 +53,7 @@ rule solve_network:
     threads: 8#solver_threads
     resources:
         mem_mb=160000, #lambda wildcards, input, attempt: (input.size // 100000) * attempt * 80,
-        walltime=config["solving"].get("walltime", "96:00:00"),
+        walltime=config["solving"].get("walltime", "120:00:00"),
     conda:
         "../envs/environment.yaml"
     script:

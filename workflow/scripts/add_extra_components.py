@@ -89,90 +89,98 @@ def calc_weighted_discount(weights,dis,lines):
     return c_discount
 
 def get_dlr():
-    if snakemake.wildcards.dlr != "none":
-        logger.info("Starting dlr calculation...")
+    logger.info("Starting dlr calculation...")
 
-        # get s_nom information for lines in base network and lines in simpl network
-        bn = pypsa.Network(snakemake.input.base_network)
-        sn = pypsa.Network(snakemake.input.s_network)
-        base_line_info = bn.lines[["bus0","bus1","s_nom"]]
-        simpl_line_info = sn.lines[["bus0","bus1","s_nom"]]
+    # get s_nom information for lines in base network and lines in simpl network
+    bn = pypsa.Network(snakemake.input.base_network)
+    sn = pypsa.Network(snakemake.input.s_network)
+    base_line_info = bn.lines[["bus0","bus1","s_nom"]]
+    simpl_line_info = sn.lines[["bus0","bus1","s_nom"]]
 
-        # load linemaps for base > sub, sub > simpl, then combine
-        base_sub_linemap = pd.read_csv(snakemake.input.linemap_sub,header=0,index_col=0)
-        sub_simpl_linemap = pd.read_csv(snakemake.input.linemap_simpl,index_col=0,header=0)
-        base_simpl_linemap = twomap_onemap(base_sub_linemap,sub_simpl_linemap)
-        simpl_lines = list(set(base_simpl_linemap["linemap"]))
+    # load linemaps for base > sub, sub > simpl, then combine
+    base_sub_linemap = pd.read_csv(snakemake.input.linemap_sub,header=0,index_col=0)
+    sub_simpl_linemap = pd.read_csv(snakemake.input.linemap_simpl,index_col=0,header=0)
+    base_simpl_linemap = twomap_onemap(base_sub_linemap,sub_simpl_linemap)
+    simpl_lines = list(set(base_simpl_linemap["linemap"]))
 
-        # get s_nom mapping to be used to calculate weights
-        s_nom = get_s_nom_map(base_simpl_linemap,simpl_lines,simpl_line_info,base_line_info)
-        # calculate weights using s_nom mapping
-        weights = get_weights(simpl_lines,s_nom)
+    # get s_nom mapping to be used to calculate weights
+    s_nom = get_s_nom_map(base_simpl_linemap,simpl_lines,simpl_line_info,base_line_info)
+    # calculate weights using s_nom mapping
+    weights = get_weights(simpl_lines,s_nom)
 
-        if snakemake.wildcards.dlr == "dlr" or snakemake.wildcards.dlr == "aar" or snakemake.wildcards.dlr == "derate":
-            year_relative = {}
-            for i, year in enumerate(snakemake.config['scenario']['planning_horizons']):
-                snap = gen_year_no_leap(year)
-                if snakemake.wildcards.dlr == "dlr" or snakemake.wildcards.dlr == "derate":
-                    path = snakemake.input.base_dlr + f"/dlr_{year}_WUS-" + snakemake.config["gcm"] + "_base-dc-line_WECC_phi-fixed_geo-ref.csv"
-                elif snakemake.wildcards.dlr == "aar":
-                    path = snakemake.input.base_dlr + f"/aar_{year}_WUS-" + snakemake.config["gcm"] + "_base-dc-line_WECC_phi-fixed_NOT-TRUNK.csv"
-                base_dlr = pd.read_csv(path,header=0,index_col=0)
-                base_dlr.columns = base_dlr.columns.astype(int)
-                logger.info(f"Loaded source {snakemake.wildcards.dlr} from {path}")
+    if snakemake.wildcards.dlr == "dlr" or snakemake.wildcards.dlr == "aar" or snakemake.wildcards.dlr == "derate":
+        year_relative = {}
+        for i, year in enumerate([snakemake.config['gcm_year']]):
+            snap = gen_year_no_leap(snakemake.config['scenario']['planning_horizons'][0])
+            if snakemake.wildcards.dlr == "dlr" or snakemake.wildcards.dlr == "derate":
+                path = snakemake.input.base_dlr + f"/rel-dlr_{year}_WUS-" + snakemake.config["gcm"] + "_base-dc-line_phi20-70-div3_cap100.csv"
+            elif snakemake.wildcards.dlr == "aar":
+                path = snakemake.input.base_dlr + f"/rel-aar_{year}_WUS-" + snakemake.config["gcm"] + "_base-dc-line_6_cap100.csv"
+            base_dlr = pd.read_csv(path,header=0,index_col=0)
+            logger.info(base_dlr.head())
+            base_dlr.columns = base_dlr.columns.astype(int)
+            logger.info(f"Loaded source {snakemake.wildcards.dlr} from {path}")
 
-                rel = calc_weighted_dlr(weights,base_dlr,simpl_lines)
-                rel.index = pd.DatetimeIndex(snap)
-                year_relative[year] = rel
+            rel = calc_weighted_dlr(weights,base_dlr,simpl_lines)
+            rel.index = pd.DatetimeIndex(snap)
+            year_relative[year] = rel
 
-            logger.info("Yearly weighted rating calculations complete, stacking")
-            all_relative = pd.concat([year_relative[year] for year in sorted(year_relative.keys())])
-        else:
-            sns = sn.snapshots.get_level_values(1)
-            logger.info(sns)
-            all_relative = pd.DataFrame(index=sns,columns=simpl_lines)
-            all_relative[:] = 1
+        logger.info("Yearly weighted rating calculations complete, stacking")
+        all_relative = pd.concat([year_relative[year] for year in sorted(year_relative.keys())])
+    else:
+        sns = sn.snapshots.get_level_values(1)
+        logger.info(sns)
+        all_relative = pd.DataFrame(index=sns,columns=simpl_lines)
+        all_relative[:] = 1
 
-        # load base system DLRs
-        #base_dlr = pd.read_csv(snakemake.input.base_dlr,header=0,index_col=0)
-        #base_dlr.columns = base_dlr.columns.astype(int)
-        #all_relative = calc_weighted_dlr(weights,base_dlr,simpl_lines)
+    # load base system DLRs
+    #base_dlr = pd.read_csv(snakemake.input.base_dlr,header=0,index_col=0)
+    #base_dlr.columns = base_dlr.columns.astype(int)
+    #all_relative = calc_weighted_dlr(weights,base_dlr,simpl_lines)
 
-        if snakemake.wildcards.dlr == "dlr": # truncate at 1.3
-            dlr = trunk(all_relative,1.3)
-            dlr = dlr.round(3)
-            dlr.to_csv(snakemake.output.dlr_path)
-        elif snakemake.wildcards.dlr == "aar": # truncate at 1.3
-            aar = trunk(all_relative,1.3)
-            aar = aar.round(3)
-            aar.to_csv(snakemake.output.dlr_path)
-        elif snakemake.wildcards.dlr == "derate": # truncate at 1
-            derate = trunk(all_relative,1)
-            derate = derate.round(3)
-            derate.to_csv(snakemake.output.dlr_path)
-        elif snakemake.wildcards.dlr == "slr": # all 1's
-            slr = pd.DataFrame(np.ones_like(all_relative), 
-                      index=all_relative.index, 
-                      columns=all_relative.columns)
-            slr.to_csv(snakemake.output.dlr_path)
-        elif snakemake.wildcards.dlr == "discount": # each column is the discount value
-            slr = pd.DataFrame(np.ones_like(all_relative), 
-                      index=all_relative.index, 
-                      columns=all_relative.columns)
-            dis_path = snakemake.input.base_dlr + f"/line_discount.csv"
-            dis = pd.read_csv(dis_path,index_col=0,header=0)
-            uc_discount = dis[snakemake.config["gcm"]]
-            c_discount = calc_weighted_discount(weights,uc_discount,simpl_lines)
-            logger.info(c_discount.head())
-            discount = slr.mul(c_discount, axis=1)
-            discount.to_csv(snakemake.output.dlr_path)
-        
-        logger.info(f"{snakemake.wildcards.dlr} exported to {snakemake.output.dlr_path}.")
+    if snakemake.wildcards.dlr == "dlr": # truncate at 1.3
+        dlr = trunk(all_relative,1.3)
+        dlr = dlr.round(3)
+        dlr.to_csv(snakemake.output.dlr_path)
+    elif snakemake.wildcards.dlr == "aar": # truncate at 1.3
+        aar = trunk(all_relative,1.3)
+        aar = aar.round(3)
+        aar.to_csv(snakemake.output.dlr_path)
+    elif snakemake.wildcards.dlr == "derate": # truncate at 1
+        derate = trunk(all_relative,1)
+        derate = derate.round(3)
+        derate.to_csv(snakemake.output.dlr_path)
+    elif snakemake.wildcards.dlr == "none": # all 1's
+        slr = pd.DataFrame(np.ones_like(all_relative), 
+                    index=all_relative.index, 
+                    columns=all_relative.columns)
+        slr.to_csv(snakemake.output.dlr_path)
+    elif snakemake.wildcards.dlr == "slr": # each column is the discount value
+        slr = pd.DataFrame(np.ones_like(all_relative), 
+                    index=all_relative.index, 
+                    columns=all_relative.columns)
+        dis_path = snakemake.input.base_dlr + f"/line_adj.csv"
+        dis = pd.read_csv(dis_path,index_col=0,header=0)
+        uc_discount = dis[snakemake.config["gcm"]]
+        c_discount = calc_weighted_discount(weights,uc_discount,simpl_lines)
+        logger.info(c_discount.head())
+        discount = slr.mul(c_discount, axis=1)
+        discount.to_csv(snakemake.output.dlr_path)
+    elif snakemake.wildcards.dlr == "discount": # each column is the discount value
+        slr = pd.DataFrame(np.ones_like(all_relative), 
+                    index=all_relative.index, 
+                    columns=all_relative.columns)
+        dis_path = snakemake.input.base_dlr + f"/line_discount.csv"
+        dis = pd.read_csv(dis_path,index_col=0,header=0)
+        uc_discount = dis[snakemake.config["gcm"]]
+        c_discount = calc_weighted_discount(weights,uc_discount,simpl_lines)
+        logger.info(c_discount.head())
+        discount = slr.mul(c_discount, axis=1)
+        discount.to_csv(snakemake.output.dlr_path)
+    
+    logger.info(f"{snakemake.wildcards.dlr} exported to {snakemake.output.dlr_path}.")
 
            
-    else:
-        logger.info(f"DLR is set to {snakemake.wildcards.dlr}. No DLR added")
-
 ## if you're doing raw DLR calculations with clustered bus locations in the PyPSA-USA workflow
 constant_inputs = {
     "T_s": 100,

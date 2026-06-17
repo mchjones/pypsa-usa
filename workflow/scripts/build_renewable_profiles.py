@@ -19,6 +19,7 @@ from pypsa.geo import haversine
 from shapely.geometry import LineString
 from typing import List, Tuple, Dict, Union, Set
 from pathlib import Path
+import rioxarray as rxr
 
 logger = logging.getLogger(__name__)
 
@@ -257,6 +258,18 @@ if __name__ == "__main__":
             allow_no_overlap=True,
         )
 
+    if params["nrel"]: # pull from manually uploaded nrel rasters
+        logger.info(f"Pulling excluder data from NREL files from {snakemake.input.nrel}")
+        da = rxr.open_rasterio(snakemake.input.nrel)
+        nodata = da.attrs.get("_FillValue", 255)
+        
+        excluder.add_raster(
+            snakemake.input.nrel,
+            nodata=nodata,
+            allow_no_overlap=True,
+            invert=True,
+        )
+
     corine = params.get("corine", {})
     if "grid_codes" in corine:
         codes = corine["grid_codes"]
@@ -434,7 +447,8 @@ if __name__ == "__main__":
 
         # get index of renewable weather year, then get that planning horizon
         index = snakemake.config['renewable_weather_years'].index(int(snakemake.wildcards.renewable_weather_years))
-        wus_year = snakemake.config['scenario']['planning_horizons'][index]
+        #wus_year = snakemake.config['scenario']['planning_horizons'][index]
+        wus_year = snakemake.params.gcm_year
 
         wus_data_horizon = load_WUS_data(wus_year,snakemake.wildcards.technology)
         wus_data_prev = load_WUS_data(int(wus_year)-1,snakemake.wildcards.technology)

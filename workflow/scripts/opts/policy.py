@@ -291,6 +291,9 @@ def add_RPS_constraints(n, config, sector, snakemake=None):
     ]
 
     logger.info(portfolio_standards)
+    if config["scenario"]["alt"] == "RPS-90" or config["scenario"]["alt"] == "BOTH":
+        portfolio_standards["pct"] = 0.9
+        logger.info(portfolio_standards)
 
     mapper = n.buses.groupby("reeds_state")["rec_trading_zone"].first().to_dict()
     portfolio_standards["rec_trading_zone"] = portfolio_standards.region.map(mapper).fillna(portfolio_standards.region)

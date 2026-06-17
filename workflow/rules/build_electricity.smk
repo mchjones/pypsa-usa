@@ -146,7 +146,9 @@ rule build_renewable_profiles:
     params:
         renewable=config_provider("renewable"),
         snapshots=config_provider("snapshots"),
+        gcm_year=config["gcm_year"],
     input:
+        nrel = lambda w: (DATA + f"wus/{w.technology}_land-use_WECC_EPSG4326.tif"),
         corine=ancient(
             DATA
             + "copernicus/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_USA_EPSG-4326.tif"
@@ -238,7 +240,7 @@ def demand_raw_data(wildcards):
     if profile == "eia":
         return DATA + "GridEmissions/EIA_DMD_2018_2024.csv"
     elif profile == "wus":
-        return DATA + f"wus/{config['gcm']}_wecc-demand_one-filler.csv" #config['gcm_demand_path']
+        return DATA + f"wus/{config['gcm']}-{config['gcm_year']}_wecc-demand_one-filler.csv" #config['gcm_demand_path']
     elif profile == "efs":
         efs_case = config["electricity"]["demand"]["scenario"]["efs_case"].capitalize()
         efs_speed = config["electricity"]["demand"]["scenario"][
@@ -326,6 +328,7 @@ rule build_electrical_demand:
         planning_horizons=config["scenario"]["planning_horizons"],
         snapshots=config["snapshots"],
         pudl_path=config_provider("pudl_path"),
+        gcm_year=config["gcm_year"]
     input:
         network=RESOURCES + "{interconnect}/elec_base_network.nc",
         demand_files=demand_raw_data,
@@ -499,6 +502,7 @@ rule add_demand:
         sectors=config["scenario"]["sector"],
         planning_horizons=config_provider("scenario", "planning_horizons"),
         snapshots=config_provider("snapshots"),
+        scale=config["electricity"]["demand"]["scale"]
     input:
         network=RESOURCES + "{interconnect}/elec_base_network.nc",
         demand=demand_to_add,

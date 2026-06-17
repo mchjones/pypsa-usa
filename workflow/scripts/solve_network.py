@@ -28,6 +28,9 @@ import logging
 
 import numpy as np
 import pandas as pd
+import xarray as xr
+import os
+import shutil
 import pypsa
 import yaml
 from _helpers import (
@@ -121,6 +124,31 @@ def prepare_network(n, solve_opts=None):
 
     return n
 
+def add_regularization(n):
+    m = n.model
+    regularization_weight = 1000
+
+    line_upgrade = m.add_variables(
+        name="line_upgrade",
+        dims=["Line"],
+        coords={"Line": n.lines.index},
+        lower=-np.inf
+    )
+    s_nom_var = m.variables["Line-s_nom"]
+    s_nom_initial = xr.DataArray(
+        n.lines["s_nom"],
+        dims=["Line"],
+        coords={"Line": n.lines.index}
+    )
+    m.add_constraints(
+        line_upgrade == s_nom_var - s_nom_initial,
+        name="line_upgrade_definition"
+    )
+    logger.info(line_upgrade)
+    custom_term = line_upgrade.sum()
+    logger.info(custom_term)
+    m.objective += regularization_weight * custom_term
+    logger.info(m.objective)
 
 def extra_functionality(n, snapshots):
     """
@@ -206,9 +234,24 @@ def extra_functionality(n, snapshots):
         # Sector demand response constraints
         add_sector_demand_response_constraints(n, config)
 
-
 def run_optimize(n, rolling_horizon, skip_iterations, cf_solving, **kwargs):
     """Initiate the correct type of pypsa.optimize function."""
+
+    original_extra_func = kwargs.get("extra_functionality")
+    
+    def extra_functionality_with_reg(n, snapshots):
+        # Call original extra_functionality first
+        if original_extra_func:
+            original_extra_func(n, snapshots)
+        
+        # Then add regularization if variables exist
+        alt = snakemake.wildcards.alt
+        if alt == "REG":
+            logger.info("Attempting to add regularization")
+            add_regularization(n)
+    
+    kwargs["extra_functionality"] = extra_functionality_with_reg
+
     if rolling_horizon:
         kwargs["horizon"] = cf_solving.get("horizon", 365)
         kwargs["overlap"] = cf_solving.get("overlap", 0)
@@ -318,7 +361,7 @@ def solve_network(n, config, solving, opts="", **kwargs):
         "linearized_unit_commitment",
         False,
     )
-    kwargs["assign_all_duals"] = cf_solving.get("assign_all_duals", False)
+    kwargs["assign_all_duals"] = True #cf_solving.get("assign_all_duals", False)
 
     rolling_horizon = cf_solving.pop("rolling_horizon", False)
     skip_iterations = cf_solving.pop("skip_iterations", False)
@@ -387,6 +430,23 @@ if __name__ == "__main__":
         solve_opts,
     )
 
+    if any(x in snakemake.config["scenario"]["alt"] for x in ["k68", "mu40", "mu100"]):
+        logger.info("loading file for temporal clustering")
+        logger.info(snakemake.input.snapshots)
+        snap_data = pd.read_csv(snakemake.input.snapshots, index_col=[0, 1], parse_dates=[1], header=0)
+        snap_data.index.names = n.snapshots.names
+        snaps = snap_data.index
+
+        weight_values = snap_data["weight"] * (8760 / snap_data["weight"].sum())
+        n.snapshot_weightings.loc[snap_data.index,"objective"] = weight_values
+
+        n.set_snapshots(snaps)
+        n.snapshot_weightings.loc[snaps, "objective"] = weight_values
+        n.snapshot_weightings.loc[snaps, "stores"] = weight_values
+        n.snapshot_weightings.loc[snaps, "generators"] = weight_values
+
+    logger.info(len(n.snapshots))
+
     n = solve_network(
         n,
         config=snakemake.config,
@@ -399,6 +459,33 @@ if __name__ == "__main__":
         store_ERM_duals(n)
 
     n.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
+
+    tmp_dir = os.environ.get("TMPDIR", "/tmp")
+
+    # Define temp paths using the base filenames of the real outputs
+    network_final = snakemake.output[0]          # e.g. results/.../network.nc
+    config_final  = snakemake.output.config      # e.g. results/.../config.yaml
+
+    network_tmp = os.path.join(tmp_dir, os.path.basename(network_final))
+    config_tmp  = os.path.join(tmp_dir, os.path.basename(config_final))
+
+    # Export to tmp
+    logger.info(f"Exporting network to tmp: {network_tmp}")
+    n.export_to_netcdf(network_tmp)
+
+    with open(config_tmp, "w") as file:
+        yaml.dump(n.meta, file, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    # Copy from tmp to final destination
+    logger.info(f"Copying outputs from TMPDIR to final destination.")
+    os.makedirs(os.path.dirname(network_final), exist_ok=True)
+    os.makedirs(os.path.dirname(config_final),  exist_ok=True)
+
+    shutil.copy2(network_tmp, network_final)
+    shutil.copy2(config_tmp,  config_final)
+
+    logger.info("Outputs successfully written to final destination.")
+"""
     n.export_to_netcdf(snakemake.output[0])
     with open(snakemake.output.config, "w") as file:
         yaml.dump(
@@ -408,3 +495,4 @@ if __name__ == "__main__":
             allow_unicode=True,
             sort_keys=False,
         )
+"""

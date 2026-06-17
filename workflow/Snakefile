@@ -75,7 +75,7 @@ wildcard_constraints:
     opts="[-+a-zA-Z0-9\.]*",
     sector="([EG]-)*[EG]",
     dlr="dlr|slr|derate|aar|discount|none",
-    alt="T3|B|NCN|LB|HD|LRE|P|none"
+    alt="T3|B|NCN|LB|HD|LRE|P|R3|REG|2045|2046|2047|2048|2049|2051|2052|2053|2054|NO-RPS|NLR-Mid|NLR-Mid_2045|NLR-Mid_2046|NLR-Mid_2047|NLR-Mid_2048|NLR-Mid_2049|NLR-Mid_2051|NLR-Mid_2052|NLR-Mid_2053|NLR-Mid_2054"
 
 # -------------------------- Config and Subworkflows ------------------------- #
 
@@ -86,8 +86,9 @@ configfile: "config/config.common.yaml"
 configfile: "config/config.plotting.yaml"
 configfile: "config/config.api.yaml"
 configfile: "config/config.sector.yaml"
-configfile: "config/config.dlr_runs.yaml"
-
+#configfile: "config/config.dlr_runs.yaml"
+configfile: "config/config.mi_rps.yaml"
+#configfile: "config/config.dlr_smol.yaml"
 
 run = config.get("run", {})
 RDIR = run["name"] + "/" if run.get("name") else ""

@@ -277,6 +277,7 @@ def set_line_nom_max(
     if np.isfinite(s_nom_max_ext) and s_nom_max_ext > 0:
         logger.info(f"Limiting line extensions to {s_nom_max_ext} MW")
         n.lines["s_nom_max"] = n.lines["s_nom"] + s_nom_max_ext
+        #logger.info(f"Overhaul: set line extension to 2X")
 
     if np.isfinite(p_nom_max_ext) and p_nom_max_ext > 0:
         logger.info(f"Limiting link extensions to {p_nom_max_ext} MW")
