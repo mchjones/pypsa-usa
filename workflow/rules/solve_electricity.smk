@@ -26,7 +26,7 @@ rule solve_network:
         transmission_network=config_provider("model_topology", "transmission_network"),
     input:
         network=RESOURCES
-        + "{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}.nc",
+        + "{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{gcm_years}.nc",
         flowgates="repo_data/ReEDS_Constraints/transmission/transmission_capacity_init_AC_ba_NARIS2024.csv",
         safer_reeds="config/policy_constraints/reeds/prm_annual.csv",
         rps_reeds="config/policy_constraints/reeds/rps_fraction.csv",
@@ -35,25 +35,25 @@ rule solve_network:
         ev_policy=ev_policy_input,
     output:
         network=RESULTS
-        + "{interconnect}/networks/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{alt}.nc",
+        + "{interconnect}/networks/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}.nc",
         config=RESULTS
-        + "{interconnect}/configs/config.elec_s{simpl}_c{clusters}_l{ll}_{opts}_{sector}_{dlr}_{alt}.yaml",
+        + "{interconnect}/configs/config.elec_s{simpl}_c{clusters}_l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}.yaml",
     log:
         solver=normpath(
             LOGS
-            + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{alt}_solver.log"
+            + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}_solver.log"
         ),
         python=LOGS
-        + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{alt}_python.log",
+        + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}_python.log",
     benchmark:
         (
             BENCHMARKS
-            + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{alt}"
+            + "solve_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}"
         )
     threads: 8#solver_threads
     resources:
-        mem_mb=160000, #lambda wildcards, input, attempt: (input.size // 100000) * attempt * 80,
-        walltime=config["solving"].get("walltime", "120:00:00"),
+        mem_mb=150000, #lambda wildcards, input, attempt: (input.size // 100000) * attempt * 80,
+        walltime=config["solving"].get("walltime", "84:00:00"),
     conda:
         "../envs/environment.yaml"
     script:

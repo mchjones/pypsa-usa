@@ -67,7 +67,6 @@ def load_WUS_data(planning_horizon: int, tech: str) -> xr.Dataset:
     
     if not file_path.exists():
         raise FileNotFoundError(f"WUS data file not found at: {file_path}")
-        
     return xr.open_dataset(file_path)
 
 def create_blank_profile(pypsa_profile: xr.Dataset) -> xr.DataArray:
@@ -115,6 +114,19 @@ def get_correct_year(
     )
 
     return combined 
+
+def correct_leap(data,year):
+    logger.info(f"Correcting for leap year ({year})")
+    expected = pd.date_range(
+        f"{year-1}-09-01 00:00:00",
+        f"{year}-08-31 23:00:00",
+        freq="h"
+    )
+    drop = expected[~((expected.month == 2) & (expected.day == 29))]
+    logger.info(data.Times)
+    data = data.assign_coords(Times=drop)
+    logger.info(data.Times)
+    return data
 
 def capitalize(s):
     return s[0].upper() + s[1:]
@@ -448,10 +460,13 @@ if __name__ == "__main__":
         # get index of renewable weather year, then get that planning horizon
         index = snakemake.config['renewable_weather_years'].index(int(snakemake.wildcards.renewable_weather_years))
         #wus_year = snakemake.config['scenario']['planning_horizons'][index]
-        wus_year = snakemake.params.gcm_year
+        wus_year = snakemake.wildcards.gcm_years #snakemake.params.gcm_year
+        logger.info(f"You are using GCM-year: {snakemake.config['gcm']}-{wus_year}")
 
         wus_data_horizon = load_WUS_data(wus_year,snakemake.wildcards.technology)
         wus_data_prev = load_WUS_data(int(wus_year)-1,snakemake.wildcards.technology)
+        if ((int(wus_year) == 2048) or (int(wus_year) == 2052)) and snakemake.config['gcm'] == "taiesm1":
+            wus_data_prev = correct_leap(wus_data_prev,int(wus_year))
         wus_data = get_correct_year(wus_data_horizon,wus_data_prev,wus_year)
 
         wus_profile = generate_wus_profile(ds,wus_data,buses,bus_coords,snakemake.wildcards.technology,sns)

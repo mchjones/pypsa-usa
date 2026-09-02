@@ -96,6 +96,7 @@ rule build_cost_data:
     params:
         costs=config_provider("costs"),
         pudl_path=config_provider("pudl_path"),
+        batt_alt=config["costs"]["atb"]["nrel_battery_alt"]
     input:
         efs_tech_costs="repo_data/costs/EFS_Technology_Data.xlsx",
         efs_icev_costs="repo_data/costs/efs_icev_costs.csv",
@@ -146,9 +147,9 @@ rule build_renewable_profiles:
     params:
         renewable=config_provider("renewable"),
         snapshots=config_provider("snapshots"),
-        gcm_year=config["gcm_year"],
+        #gcm_year=config["gcm_year"],
     input:
-        nrel = lambda w: (DATA + f"wus/{w.technology}_land-use_WECC_EPSG4326.tif"),
+        nrel = lambda w: (DATA + f"wus/{w.technology}_land-use_EPSG4326.tif"),
         corine=ancient(
             DATA
             + "copernicus/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_USA_EPSG-4326.tif"
@@ -184,12 +185,12 @@ rule build_renewable_profiles:
             #renewable_weather_year=config["renewable_weather_years"],
         ),
     output:
-        profile=RESOURCES + "{interconnect}/profile_{technology}_{renewable_weather_years}_{cf_source}.nc",
-        availability=RESULTS + "{interconnect}/land_use_availability_{technology}_{renewable_weather_years}_{cf_source}.png",
+        profile=RESOURCES + "{interconnect}/profile_{technology}_{renewable_weather_years}-{gcm_years}_{cf_source}.nc",
+        availability=RESULTS + "{interconnect}/land_use_availability_{technology}_{renewable_weather_years}-{gcm_years}_{cf_source}.png",
     log:
-        LOGS + "{interconnect}/build_renewable_profile_{technology}_{renewable_weather_years}_{cf_source}.log",
+        LOGS + "{interconnect}/build_renewable_profile_{technology}_{renewable_weather_years}-{gcm_years}_{cf_source}.log",
     benchmark:
-        BENCHMARKS + "{interconnect}/build_renewable_profiles_{technology}_{renewable_weather_years}_{cf_source}",
+        BENCHMARKS + "{interconnect}/build_renewable_profiles_{technology}_{renewable_weather_years}-{gcm_years}_{cf_source}",
     threads: ATLITE_NPROCESSES
     retries: 1
     resources:
@@ -240,7 +241,7 @@ def demand_raw_data(wildcards):
     if profile == "eia":
         return DATA + "GridEmissions/EIA_DMD_2018_2024.csv"
     elif profile == "wus":
-        return DATA + f"wus/{config['gcm']}-{config['gcm_year']}_wecc-demand_one-filler.csv" #config['gcm_demand_path']
+        return DATA + f"wus/{config['gcm']}"+"-{gcm_years}_wecc-demand_one-filler.csv" #config['gcm_demand_path']
     elif profile == "efs":
         efs_case = config["electricity"]["demand"]["scenario"]["efs_case"].capitalize()
         efs_speed = config["electricity"]["demand"]["scenario"][
@@ -328,17 +329,17 @@ rule build_electrical_demand:
         planning_horizons=config["scenario"]["planning_horizons"],
         snapshots=config["snapshots"],
         pudl_path=config_provider("pudl_path"),
-        gcm_year=config["gcm_year"]
+        #gcm_year=config["gcm_year"]
     input:
         network=RESOURCES + "{interconnect}/elec_base_network.nc",
         demand_files=demand_raw_data,
         demand_scaling_file=demand_scaling_data,
     output:
-        elec_demand=RESOURCES + "{interconnect}/demand/{end_use}_electricity.csv",
+        elec_demand=RESOURCES + "{interconnect}/demand/{end_use}_electricity_{gcm_years}.csv",
     log:
-        LOGS + "{interconnect}/{end_use}_build_demand.log",
+        LOGS + "{interconnect}/{end_use}_build_demand_{gcm_years}.log",
     benchmark:
-        BENCHMARKS + "{interconnect}/{end_use}_build_demand"
+        BENCHMARKS + "{interconnect}/{end_use}_build_demand_{gcm_years}"
     threads: 2
     resources:
         mem_mb=16000 #lambda wildcards, input, attempt: (input.size // 70000) * attempt * 5,
@@ -461,7 +462,7 @@ rule build_transport_other_demand:
 def demand_to_add(wildcards):
 
     if config["scenario"]["sector"] == "E":
-        return RESOURCES + "{interconnect}/demand/power_electricity.csv"
+        return RESOURCES + "{interconnect}/demand/power_electricity_{gcm_years}.csv"
     else:
         # service demand
         services = ["residential", "commercial"]
@@ -507,11 +508,11 @@ rule add_demand:
         network=RESOURCES + "{interconnect}/elec_base_network.nc",
         demand=demand_to_add,
     output:
-        network=RESOURCES + "{interconnect}/elec_base_network_dem.nc",
+        network=RESOURCES + "{interconnect}/elec_base_network_dem_{gcm_years}.nc",
     log:
-        LOGS + "{interconnect}/add_demand.log",
+        LOGS + "{interconnect}/add_demand_{gcm_years}.log",
     benchmark:
-        BENCHMARKS + "{interconnect}/add_demand"
+        BENCHMARKS + "{interconnect}/add_demand_{gcm_years}"
     resources:
         mem_mb=lambda wildcards, input, attempt: (input.size // 70000) * attempt * 2,
     script:
@@ -596,7 +597,7 @@ rule add_electricity:
     input:
         unpack(dynamic_fuel_price_files),
         **{
-            f"profile_{tech}_{renewable_weather_year}": RESOURCES + "{interconnect}" + f"/profile_{tech}_{renewable_weather_year}_{config['cf_source']}" + ".nc"
+            f"profile_{tech}_{renewable_weather_year}": RESOURCES + "{interconnect}" + f"/profile_{tech}_{renewable_weather_year}-"+"{gcm_years}"+f"_{config['cf_source']}" + ".nc"
             for tech in config["electricity"]["renewable_carriers"]
             for renewable_weather_year in config["renewable_weather_years"]
             if tech != "hydro"
@@ -612,7 +613,7 @@ rule add_electricity:
             f"gen_cost_mult_{Path(x).stem}": f"repo_data/locational_multipliers/{Path(x).name}"
             for x in Path("repo_data/locational_multipliers/").glob("*")
         },
-        base_network=RESOURCES + "{interconnect}/elec_base_network_dem.nc",
+        base_network=RESOURCES + "{interconnect}/elec_base_network_dem_{gcm_years}.nc",
         tech_costs=RESOURCES
         + f"costs/costs_{config['scenario']['planning_horizons'][0]}.csv",
         # attach first horizon costs
@@ -636,11 +637,11 @@ rule add_electricity:
             else []
         ),
     output:
-        RESOURCES + "{interconnect}/elec_base_network_l_pp.pkl",
+        RESOURCES + "{interconnect}/elec_base_network_l_pp_{gcm_years}.pkl",
     log:
-        LOGS + "{interconnect}/add_electricity.log",
+        LOGS + "{interconnect}/add_electricity_{gcm_years}.log",
     benchmark:
-        BENCHMARKS + "{interconnect}/add_electricity"
+        BENCHMARKS + "{interconnect}/add_electricity_{gcm_years}"
     threads: 1
     resources:
         mem_mb=lambda wildcards, input, attempt: (input.size // 400000) * attempt * 2,
@@ -650,6 +651,8 @@ rule add_electricity:
 
 ################# ----------- Rules to Aggregate & Simplify Network ---------- #################
 rule simplify_network:
+    wildcard_constraints:
+        gcm_years=r"\d{4}"
     params:
         aggregation_strategies=config["clustering"].get("aggregation_strategies", {}),
         focus_weights=config_provider("focus_weights", default=False),
@@ -661,20 +664,20 @@ rule simplify_network:
     input:
         bus2sub=RESOURCES + "{interconnect}/bus2sub.csv",
         sub=RESOURCES + "{interconnect}/sub.csv",
-        network=RESOURCES + "{interconnect}/elec_base_network_l_pp.pkl",
+        network=RESOURCES + "{interconnect}/elec_base_network_l_pp_{gcm_years}.pkl",
         regions_onshore=RESOURCES + "{interconnect}/Geospatial/regions_onshore.geojson",
         regions_offshore=RESOURCES
         + "{interconnect}/Geospatial/regions_offshore.geojson",
     output:
-        network=RESOURCES + "{interconnect}/elec_s{simpl}.nc",
+        network=RESOURCES + "{interconnect}/elec_s{simpl}_{gcm_years}.nc",
         regions_onshore=RESOURCES
-        + "{interconnect}/Geospatial/regions_onshore_s{simpl}.geojson",
+        + "{interconnect}/Geospatial/regions_onshore_s{simpl}_{gcm_years}.geojson",
         regions_offshore=RESOURCES
-        + "{interconnect}/Geospatial/regions_offshore_s{simpl}.geojson",
-        linemap_sub=RESOURCES + "{interconnect}/linemap_sub_pre-s{simpl}.csv",
-        linemap_simpl=RESOURCES + "{interconnect}/linemap_s{simpl}.csv",
+        + "{interconnect}/Geospatial/regions_offshore_s{simpl}_{gcm_years}.geojson",
+        linemap_sub=RESOURCES + "{interconnect}/linemap_sub_pre-s{simpl}_{gcm_years}.csv",
+        linemap_simpl=RESOURCES + "{interconnect}/linemap_s{simpl}_{gcm_years}.csv",
     log:
-        "logs/simplify_network/{interconnect}/elec_s{simpl}.log",
+        "logs/simplify_network/{interconnect}/elec_s{simpl}_{gcm_years}.log",
     threads: 1
     resources:
         mem_mb= 32000 #lambda wildcards, input, attempt: (input.size // 100000) * attempt * 1.5,
@@ -699,13 +702,13 @@ rule cluster_network:
         ),
         topology_aggregation=config_provider("model_topology", "aggregate"),
     input:
-        network=RESOURCES + "{interconnect}/elec_s{simpl}.nc",
+        network=RESOURCES + "{interconnect}/elec_s{simpl}_{gcm_years}.nc",
         regions_onshore=RESOURCES
-        + "{interconnect}/Geospatial/regions_onshore_s{simpl}.geojson",
+        + "{interconnect}/Geospatial/regions_onshore_s{simpl}_{gcm_years}.geojson",
         regions_offshore=RESOURCES
-        + "{interconnect}/Geospatial/regions_offshore_s{simpl}.geojson",
+        + "{interconnect}/Geospatial/regions_offshore_s{simpl}_{gcm_years}.geojson",
         custom_busmap=(
-            DATA + "{interconnect}/custom_busmap_{clusters}.csv"
+            DATA + "{interconnect}/custom_busmap_{clusters}_{gcm_years}.csv"
             if config["enable"].get("custom_busmap", False)
             else []
         ),
@@ -719,17 +722,17 @@ rule cluster_network:
         itl_state="repo_data/ReEDS_Constraints/transmission/transmission_capacity_init_AC_state_NARIS2024.csv",
         itl_costs_state="repo_data/ReEDS_Constraints/transmission/transmission_distance_cost_500kVdc_state.csv",
     output:
-        network=RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}.nc",
+        network=RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_{gcm_years}.nc",
         regions_onshore=RESOURCES
-        + "{interconnect}/Geospatial/regions_onshore_s{simpl}_{clusters}.geojson",
+        + "{interconnect}/Geospatial/regions_onshore_s{simpl}_{clusters}_{gcm_years}.geojson",
         regions_offshore=RESOURCES
-        + "{interconnect}/Geospatial/regions_offshore_s{simpl}_{clusters}.geojson",
-        busmap=RESOURCES + "{interconnect}/busmap_s{simpl}_{clusters}.csv",
-        linemap=RESOURCES + "{interconnect}/linemap_s{simpl}_{clusters}.csv",
+        + "{interconnect}/Geospatial/regions_offshore_s{simpl}_{clusters}_{gcm_years}.geojson",
+        busmap=RESOURCES + "{interconnect}/busmap_s{simpl}_{clusters}_{gcm_years}.csv",
+        linemap=RESOURCES + "{interconnect}/linemap_s{simpl}_{clusters}_{gcm_years}.csv",
     log:
-        "logs/cluster_network/{interconnect}/elec_s{simpl}_c{clusters}.log",
+        "logs/cluster_network/{interconnect}/elec_s{simpl}_c{clusters}_{gcm_years}.log",
     benchmark:
-        "benchmarks/cluster_network/{interconnect}/elec_s{simpl}_c{clusters}"
+        "benchmarks/cluster_network/{interconnect}/elec_s{simpl}_c{clusters}_{gcm_years}"
     threads: 1
     resources:
         mem_mb=lambda wildcards, input, attempt: (input.size // 100000) * attempt * 2,
@@ -747,18 +750,18 @@ rule add_extra_components:
             for hour in phs_tech.split("hr_")
             if hour.isdigit()
         },
-        network=RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}.nc",
+        network=RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_{gcm_years}.nc",
         tech_costs=lambda wildcards: expand(
             RESOURCES + "costs/costs_{year}.csv",
             year=config["scenario"]["planning_horizons"],
         ),
         regions_onshore=RESOURCES
-        + "{interconnect}/Geospatial/regions_onshore_s{simpl}_{clusters}.geojson",
+        + "{interconnect}/Geospatial/regions_onshore_s{simpl}_{clusters}_{gcm_years}.geojson",
         elev_ref=DATA+"wus/elevation_reference.csv",
         base_network=RESOURCES + "{interconnect}/elec_base_network.nc",
-        s_network=RESOURCES + "{interconnect}/elec_s{simpl}.nc",
-        linemap_sub=RESOURCES + "{interconnect}/linemap_sub_pre-s{simpl}.csv",
-        linemap_simpl=RESOURCES + "{interconnect}/linemap_s{simpl}.csv",
+        s_network=RESOURCES + "{interconnect}/elec_s{simpl}_{gcm_years}.nc",
+        linemap_sub=RESOURCES + "{interconnect}/linemap_sub_pre-s{simpl}_{gcm_years}.csv",
+        linemap_simpl=RESOURCES + "{interconnect}/linemap_s{simpl}_{gcm_years}.csv",
         base_dlr=DATA + "wus"
     params:
         retirement=config["electricity"].get("retirement", "technical"),
@@ -766,13 +769,13 @@ rule add_extra_components:
         trim_network=config_provider("model_topology", "trim", default=False),
         snapshots=config_provider("snapshots"),
     output:
-        RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec_{dlr}.nc",
-        dlr_path=DATA + "wus/{interconnect}/" + config["gcm"] + "_s{simpl}_c{clusters}_{dlr}.csv"
+        RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec_{dlr}_{gcm_years}.nc",
+        dlr_path=DATA + "wus/{interconnect}/" + config["gcm"] + "_s{simpl}_c{clusters}_{dlr}_{gcm_years}.csv"
     log:
-        "logs/add_extra_components/{interconnect}/elec_s{simpl}_c{clusters}_ec_{dlr}.log",
+        "logs/add_extra_components/{interconnect}/elec_s{simpl}_c{clusters}_ec_{dlr}_{gcm_years}.log",
     threads: 1
     resources:
-        mem_mb=180000, #lambda wildcards, input, attempt: (input.size // 100000) * attempt * 2,
+        mem_mb=lambda wildcards, input, attempt: (input.size // 100000) * attempt * 2,
     group:
         "prepare"
     script:
@@ -798,7 +801,7 @@ rule prepare_network:
             config["custom_files"]["files_path"]
             + config["custom_files"]["network_name"]
             if config["custom_files"].get("activate", False)
-            else RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec_{dlr}.nc"
+            else RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec_{dlr}_{gcm_years}.nc"
         ),
         tech_costs=(
             config["custom_files"]["files_path"] + "costs_2030.csv"
@@ -806,11 +809,11 @@ rule prepare_network:
             else RESOURCES
             + f"costs/costs_{config['scenario']['planning_horizons'][0]}.csv"
         ),
-        dlr= DATA + "wus/{interconnect}/" + config["gcm"] + "_s{simpl}_c{clusters}_{dlr}.csv", 
+        dlr= DATA + "wus/{interconnect}/" + config["gcm"] + "_s{simpl}_c{clusters}_{dlr}_{gcm_years}.csv", 
     output:
-        RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{dlr}.nc",
+        RESOURCES + "{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{dlr}_{gcm_years}.nc",
     log:
-        solver="logs/prepare_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{dlr}.log",
+        solver="logs/prepare_network/{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{dlr}_{gcm_years}.log",
     threads: 1
     resources:
         mem_mb=lambda wildcards, input, attempt: (input.size // 100000) * attempt * 2,

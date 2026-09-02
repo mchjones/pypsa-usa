@@ -75,7 +75,7 @@ wildcard_constraints:
     opts="[-+a-zA-Z0-9\.]*",
     sector="([EG]-)*[EG]",
     dlr="dlr|slr|derate|aar|discount|none",
-    alt="T3|B|NCN|LB|HD|LRE|P|R3|REG|2045|2046|2047|2048|2049|2051|2052|2053|2054|NO-RPS|NLR-Mid|NLR-Mid_2045|NLR-Mid_2046|NLR-Mid_2047|NLR-Mid_2048|NLR-Mid_2049|NLR-Mid_2051|NLR-Mid_2052|NLR-Mid_2053|NLR-Mid_2054"
+    alt="T3|B|NCN|LB|HD|LRE|P|R3|REG|2045|2046|2047|2048|2049|2051|2052|2053|2054|NO-RPS|NO-CCS|NLR-Mid|NLR-Mid_trunk-1.2|NLR-Mid_trunk-1.4"
 
 # -------------------------- Config and Subworkflows ------------------------- #
 
@@ -86,8 +86,8 @@ configfile: "config/config.common.yaml"
 configfile: "config/config.plotting.yaml"
 configfile: "config/config.api.yaml"
 configfile: "config/config.sector.yaml"
-#configfile: "config/config.dlr_runs.yaml"
-configfile: "config/config.mi_rps.yaml"
+configfile: "config/config.dlr_runs.yaml"
+#configfile: "config/config.mi_rps.yaml"
 #configfile: "config/config.dlr_smol.yaml"
 
 run = config.get("run", {})
@@ -129,7 +129,7 @@ def electricity_figures(wildcards):
         figs.append(
             expand(
                 RESULTS
-                + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}_{dlr}_{alt}/maps/{figure}",
+                + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}/maps/{figure}",
                 **config["scenario"],
                 figure=FIGURES_MAPS,
             )
@@ -138,7 +138,7 @@ def electricity_figures(wildcards):
         figs.append(
             expand(
                 RESULTS
-                + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}_{dlr}_{alt}/emissions/{figure}",
+                + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}/emissions/{figure}",
                 **config["scenario"],
                 figure=FIGURES_EMISSIONS,
             )
@@ -147,7 +147,7 @@ def electricity_figures(wildcards):
         figs.append(
             expand(
                 RESULTS
-                + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}_{dlr}_{alt}/production/{figure}",
+                + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}/production/{figure}",
                 **config["scenario"],
                 figure=FIGURES_PRODUCTION,
             )
@@ -156,7 +156,7 @@ def electricity_figures(wildcards):
         figs.append(
             expand(
                 RESULTS
-                + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}_{dlr}_{alt}/system/{figure}",
+                + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}/system/{figure}",
                 **config["scenario"],
                 figure=FIGURES_SYSTEM,
             )
@@ -174,7 +174,7 @@ def sector_figures(wildcards):
         figs.append(
             expand(
                 RESULTS
-                + "{interconnect}/figures/s{simpl}_c{clusters}/l{ll}_{opts}_{sector}_{dlr}_{alt}/system/natural_gas/{figure}.png",
+                + "{interconnect}/figures/s{simpl}_c{clusters}/l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}/system/natural_gas/{figure}.png",
                 **config["scenario"],
                 figure=FIGURES_SECTOR_NATURAL_GAS,
             )
@@ -182,7 +182,7 @@ def sector_figures(wildcards):
         figs.append(
             expand(
                 RESULTS
-                + "{interconnect}/figures/s{simpl}_c{clusters}/l{ll}_{opts}_{sector}_{dlr}_{alt}/system/emissions/{figure}.png",
+                + "{interconnect}/figures/s{simpl}_c{clusters}/l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}/system/emissions/{figure}.png",
                 **config["scenario"],
                 figure=FIGURES_SECTOR_EMISSIONS,
             )
@@ -190,7 +190,7 @@ def sector_figures(wildcards):
         figs.append(
             expand(
                 RESULTS
-                + "{interconnect}/figures/s{simpl}_c{clusters}/l{ll}_{opts}_{sector}_{dlr}_{alt}/system/production/res/{figure}.png",
+                + "{interconnect}/figures/s{simpl}_c{clusters}/l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}/system/production/res/{figure}.png",
                 **config["scenario"],
                 figure=FIGURES_SECTOR_PRODUCTION,
             )
@@ -198,7 +198,7 @@ def sector_figures(wildcards):
         figs.append(
             expand(
                 RESULTS
-                + "{interconnect}/figures/s{simpl}_c{clusters}/l{ll}_{opts}_{sector}_{dlr}_{alt}/system/capacity/res/{figure}.png",
+                + "{interconnect}/figures/s{simpl}_c{clusters}/l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}/system/capacity/res/{figure}.png",
                 **config["scenario"],
                 figure=FIGURES_SECTOR_CAPACITY,
             )
@@ -206,7 +206,7 @@ def sector_figures(wildcards):
         figs.append(
             expand(
                 RESULTS
-                + "{interconnect}/figures/s{simpl}_c{clusters}/l{ll}_{opts}_{sector}_{dlr}_{alt}/system/sankey/{figure}.html",
+                + "{interconnect}/figures/s{simpl}_c{clusters}/l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}/system/sankey/{figure}.html",
                 **config["scenario"],
                 figure=FIGURES_SECTOR_SANKEY,
             )
@@ -219,7 +219,7 @@ def validation_figures(wildcards):
     if config["run"]["validation"]:
         return expand(
             RESULTS
-            + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}_{dlr}_{alt}/{figure}",
+            + "{interconnect}/figures/s{simpl}_cluster_{clusters}/l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}/{figure}",
             **config["scenario"],
             figure=FIGURES_VALIDATE,
         )
@@ -239,7 +239,7 @@ rule data_model:
     input:
         expand(
             RESOURCES
-            + "{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{alt}.nc",
+            + "{interconnect}/elec_s{simpl}_c{clusters}_ec_l{ll}_{opts}_{sector}_{dlr}_{gcm_years}_{alt}.nc",
             **config["scenario"],
         ),
 
